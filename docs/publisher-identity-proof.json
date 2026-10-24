@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "type": "publisher-identity-proof",
+  "publisher": "albanherisson",
+  "public_key_ed25519": "LwtwcLI4RHATP4OXL1UDlnXg9WUdSupoD8s25krcXMY=",
+  "challenge_path": "docs/publisher-challenge.txt",
+  "challenge_sha256": "",
+  "signature_base64": "bGMLqcOHwRtcmCtDvQFIhrswXqtXmhQEfrdZOWuIRSCvaHbNEXHCUWzIKuYEW5t3Asf2oZfnx4o9fGcO1VFyCA==",
+  "install_allowed": false,
+  "note": "Identity proof only. This is not a signed application release or an install authorization."
+}
