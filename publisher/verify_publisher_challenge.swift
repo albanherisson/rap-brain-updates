@@ -12,6 +12,6 @@ guard let publicBytes = Data(base64Encoded: publisherKeyB64),
 guard let signature = Data(base64Encoded: args[1]), signature.count == 64 else { refuse("Bad signature length or base64") }
 guard let challenge = try? Data(contentsOf: URL(fileURLWithPath: args[2])) else { refuse("Challenge unavailable") }
 guard challenge.starts(with: Data("RAP-BRAIN-PUBLISHER-IDENTITY-PROOF-v1\n".utf8)),
-      challenge.contains(Data("install_allowed=false\n".utf8)) else { refuse("Unexpected challenge or installation flag") }
+      String(data: challenge, encoding: .utf8)?.contains("install_allowed=false\n") == true else { refuse("Unexpected challenge or installation flag") }
 guard publicKey.isValidSignature(signature, for: challenge) else { refuse("Signature does not match the PINNED publisher key") }
 print("✅ Publisher Ed25519 signature valid (Apple CryptoKit). NO INSTALLATION.")
