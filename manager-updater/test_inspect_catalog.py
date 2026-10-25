@@ -30,6 +30,14 @@ class Tests(unittest.TestCase):
     def test_unsigned_rejected(self):
         v=json.loads(json.dumps(VALID));v["signature"]=""
         with self.assertRaises(Reject): check(v)
+    def test_duplicate_signed_field_rejected(self):
+        raw = json.dumps(VALID).replace('"install_allowed": false', '"install_allowed": false, "install_allowed": true')
+        with self.assertRaises(Reject):
+            check_catalog_bytes(raw.encode(), verifier=lambda sig, payload: None)
+    def test_nonfinite_json_rejected(self):
+        raw = json.dumps(VALID).replace('"size": 100', '"size": NaN')
+        with self.assertRaises(Reject):
+            check_catalog_bytes(raw.encode(), verifier=lambda sig, payload: None)
     def test_unknown_field(self):
         v=json.loads(json.dumps(VALID));v["payload"]["delete_data"]=True
         with self.assertRaises(Reject): check(v)
