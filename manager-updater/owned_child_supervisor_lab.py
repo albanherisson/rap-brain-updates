@@ -43,7 +43,7 @@ class OwnedChild:
         finally:
             if process.stdout is not None:process.stdout.close()
 
-def transaction(fail_health=False):
+def transaction(fail_health=False, fail_start=False):
     """Only an auto-created temp directory containing fake Manager data is changed."""
     with tempfile.TemporaryDirectory(prefix="rapbrain-owned-fixture-") as dirname:
         root=Path(dirname)
@@ -58,7 +58,20 @@ def transaction(fail_health=False):
             staged=root/"manager.new"
             staged.write_bytes(b"new")
             os.replace(staged,target)
-            worker.start(script,"new")
+            try:
+                if fail_start:
+                    bad=root/"bad_child.py"
+                    bad.write_text("print('NOT_READY',flush=True)")
+                    worker.start(bad,"new")
+                else:
+                    worker.start(script,"new")
+            except ChildError:
+                staged=root/"manager.restore"
+                staged.write_bytes(b"old")
+                os.replace(staged,target)
+                worker.start(script,"old")
+                if target.read_bytes()!=b"old":raise ChildError("Failed start rollback mismatch")
+                return "ROLLED_BACK"
             if fail_health:
                 worker.stop()
                 staged=root/"manager.restore"
