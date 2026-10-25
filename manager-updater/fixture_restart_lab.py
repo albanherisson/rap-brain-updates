@@ -19,7 +19,7 @@ def free_port():
 
 def healthy(port):
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/",timeout=.2) as r:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(f"http://127.0.0.1:{port}/",timeout=.2) as r:
             return r.status==200 and r.read(64)==b"FIXTURE_ONLY\n"
     except Exception:return False
 
