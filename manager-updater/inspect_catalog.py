@@ -103,13 +103,13 @@ def check_catalog_bytes(raw, archive_path=None, verifier=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("catalog", type=Path)
-    parser.add_argument("--archive", type=Path, help="Optional local ZIP for integrity verification; never unpacked")
+    parser.add_argument("--archive", type=Path, required=True, help="Required local ZIP for integrity verification; never unpacked")
     args = parser.parse_args()
     try:
         payload = check_catalog_bytes(args.catalog.read_bytes(), args.archive)
     except (Reject, OSError, UnicodeError, ValueError) as exc:
         parser.exit(1, "REJECT: " + str(exc) + "\n")
-    print("VERIFIED (READ-ONLY):", payload["product"], payload["version"])
+    print("VERIFIED SIGNATURE AND ARCHIVE HASH (READ-ONLY):", payload["product"], payload["version"])
     print("No files downloaded, installed, replaced or executed.")
 
 
