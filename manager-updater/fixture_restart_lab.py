@@ -25,13 +25,15 @@ def healthy(port):
 
 def launch(script,port):
     p=subprocess.Popen([sys.executable,str(script),str(port)],start_new_session=True,
-                       stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+                       stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,text=True)
     end=time.monotonic()+3
     while time.monotonic()<end:
         if p.poll() is not None:break
         if healthy(port):return p
         time.sleep(.04)
-    stop(p);raise RuntimeError("Fixture launch failed")
+    stop(p)
+    details=(p.stderr.read() if p.stderr is not None else "")[:1200]
+    raise RuntimeError("Fixture launch failed; child stderr: "+details)
 
 def stop(p):
     # Only a Popen handle created by this test is accepted. No arbitrary PID.
