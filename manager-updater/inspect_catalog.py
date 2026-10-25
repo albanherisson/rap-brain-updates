@@ -56,11 +56,15 @@ def check_catalog_bytes(raw, archive_path=None, verifier=None):
     if type(info["url"]) is not str:
         raise Reject("Missing archive URL")
     uri = urlsplit(info["url"])
-    if uri.scheme != "https" or uri.username or uri.password or uri.fragment or uri.query:
+    if uri.scheme != "https" or uri.username or uri.password or uri.fragment or uri.query or uri.port is not None:
         raise Reject("Unsafe archive URL")
     # Avoid cross-site redirects: real downloader must independently enforce host/redirect policy.
     if uri.hostname not in {"github.com", "albanherisson.github.io"}:
         raise Reject("Untrusted archive host")
+    if uri.hostname == "github.com" and not uri.path.startswith("/albanherisson/rap-brain-updates/releases/download/"):
+        raise Reject("Archive must originate from the official repository")
+    if uri.hostname == "albanherisson.github.io" and not uri.path.startswith("/rap-brain-updates/"):
+        raise Reject("Archive must originate from the official Pages path")
     if not uri.path.endswith("/" + info["filename"]):
         raise Reject("Archive URL name mismatch")
     if not isinstance(signature, str):
