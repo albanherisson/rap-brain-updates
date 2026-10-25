@@ -18,6 +18,15 @@ class Tests(unittest.TestCase):
    authenticated_stop(self.server,secrets.token_bytes(32),self.port)
   error.exception.close()
   self.assertTrue(self.server.thread.is_alive())
+ def test_new_dummy_server_responds_after_authenticated_stop(self):
+  self.assertTrue(authenticated_stop(self.server,self.secret,self.port))
+  successor=FixtureServer(self.secret)
+  next_port=successor.start()
+  try:
+   with urllib.request.urlopen('http://127.0.0.1:%d/health'%next_port,timeout=2) as response:
+    self.assertEqual(response.read(),b'FIXTURE_HEALTH_OK')
+  finally:
+   successor.stop_as_owner()
  def test_replay_rejected(self):
   proof=hmac.new(self.secret,("fixture-stop-v1:"+self.server.nonce).encode(),hashlib.sha256).hexdigest().encode()
   request=lambda:urllib.request.Request('http://127.0.0.1:%d/stop'%self.port,data=proof,method='POST')
