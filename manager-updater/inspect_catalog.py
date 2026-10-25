@@ -55,8 +55,12 @@ def check_catalog_bytes(raw, archive_path=None, verifier=None):
         raise Reject("Bad SHA256")
     if type(info["url"]) is not str:
         raise Reject("Missing archive URL")
-    uri = urlsplit(info["url"])
-    if uri.scheme != "https" or uri.username or uri.password or uri.fragment or uri.query or uri.port is not None:
+    try:
+        uri = urlsplit(info["url"])
+        unsafe_port = uri.port is not None
+    except ValueError as exc:
+        raise Reject("Malformed archive URL") from exc
+    if uri.scheme != "https" or uri.username or uri.password or uri.fragment or uri.query or unsafe_port:
         raise Reject("Unsafe archive URL")
     # Avoid cross-site redirects: real downloader must independently enforce host/redirect policy.
     if uri.hostname not in {"github.com", "albanherisson.github.io"}:
