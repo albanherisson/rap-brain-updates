@@ -21,7 +21,7 @@ LAST_PROBE = 'not tried'
 def raw_http(port):
     with socket.create_connection(("127.0.0.1",port),timeout=.4) as sock:
         sock.settimeout(.4)
-        sock.sendall(b"GET / HTTP/1.0\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n")
+        sock.sendall(b"GET / HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n")
         data=b""
         while len(data)<1024:
             part=sock.recv(1024)
