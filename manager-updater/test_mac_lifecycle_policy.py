@@ -31,7 +31,7 @@ class Tests(unittest.TestCase):
  def test_failed_switch(self):self.assertEqual(simulate(fail_at=Stage.SWITCHED)[-1],"launch_restored_version")
  def test_failed_start(self):self.assertEqual(simulate(fail_at=Stage.STARTED)[-1],"launch_restored_version")
  def test_failed_probe(self):self.assertEqual(simulate(fail_at=Stage.HEALTHY)[-1],"launch_restored_version")
- def test_failed_restore(self):self.assertEqual(simulate(fail_at=Stage.ROLLBACK)[-1],"preserve_backup_and_abort") if False else self.assertEqual(plan(Stage.ROLLBACK,restored=False).name,"preserve_backup_and_abort")
+ def test_failed_restore(self):self.assertEqual(plan(Stage.ROLLBACK,restored=False).name,"preserve_backup_and_abort")
  def test_terminal_stage(self):
   with self.assertRaises(Refused):plan(Stage.COMMITTED)
 if __name__=="__main__":unittest.main()
