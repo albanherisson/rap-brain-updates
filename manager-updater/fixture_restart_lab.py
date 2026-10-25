@@ -17,11 +17,17 @@ def free_port():
         s.bind(("127.0.0.1",0))
         return s.getsockname()[1]
 
+LAST_PROBE = 'not tried'
 def healthy(port):
+    global LAST_PROBE
     try:
         with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(f"http://127.0.0.1:{port}/",timeout=.2) as r:
-            return r.status==200 and r.read(64)==b"FIXTURE_ONLY\n"
-    except Exception:return False
+            body=r.read(64)
+            LAST_PROBE=f"status={r.status}, body={body!r}"
+            return r.status==200 and body==b"FIXTURE_ONLY\n"
+    except Exception as exc:
+        LAST_PROBE=type(exc).__name__+": "+str(exc)[:150]
+        return False
 
 def launch(script,port):
     p=subprocess.Popen([sys.executable,str(script),str(port)],start_new_session=True,
@@ -33,7 +39,7 @@ def launch(script,port):
         time.sleep(.04)
     stop(p)
     details=(p.stderr.read() if p.stderr is not None else "")[:1200]
-    raise RuntimeError("Fixture launch failed; child stderr: "+details)
+    raise RuntimeError("Fixture launch failed; probe="+LAST_PROBE+"; child stderr: "+details)
 
 def stop(p):
     # Only a Popen handle created by this test is accepted. No arbitrary PID.
