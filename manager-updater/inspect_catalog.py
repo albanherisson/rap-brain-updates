@@ -9,6 +9,7 @@ import re
 import subprocess
 import tempfile
 from urllib.parse import urlsplit
+from zip_gate import verify_zip, UnsafeArchive
 
 PINNED_PUBLISHER_KEY = "LwtwcLI4RHATP4OXL1UDlnXg9WUdSupoD8s25krcXMY="
 MAX_CATALOG_BYTES = 65536
@@ -97,6 +98,10 @@ def check_catalog_bytes(raw, archive_path=None, verifier=None):
                 sha.update(block)
         if sha.hexdigest() != info["sha256"]:
             raise Reject("Archive digest mismatch")
+        try:
+            verify_zip(archive_path)
+        except UnsafeArchive as exc:
+            raise Reject("Archive content rejected: " + str(exc)) from exc
     return payload
 
 
