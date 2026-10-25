@@ -14,8 +14,9 @@ class Tests(unittest.TestCase):
   self.assertTrue(authenticated_stop(self.server,self.secret,self.port))
   self.assertFalse(self.server.thread.is_alive())
  def test_wrong_secret_does_not_shutdown(self):
-  with self.assertRaises(urllib.error.HTTPError):
+  with self.assertRaises(urllib.error.HTTPError) as error:
    authenticated_stop(self.server,secrets.token_bytes(32),self.port)
+  error.exception.close()
   self.assertTrue(self.server.thread.is_alive())
  def test_replay_rejected(self):
   proof=hmac.new(self.secret,("fixture-stop-v1:"+self.server.nonce).encode(),hashlib.sha256).hexdigest().encode()
