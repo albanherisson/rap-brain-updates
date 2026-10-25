@@ -5,6 +5,8 @@ from owned_child_supervisor_lab import OwnedChild,ChildError,CHILD,transaction
 class Tests(unittest.TestCase):
     def test_success(self):self.assertEqual(transaction(),"COMMITTED")
     def test_rollback(self):self.assertEqual(transaction(fail_health=True),"ROLLED_BACK")
+    def test_failed_child_start_restores_old_version(self):
+        self.assertEqual(transaction(fail_start=True),"ROLLED_BACK")
     def test_owned_process_stops(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/"fixture_child.py";p.write_text(CHILD)
