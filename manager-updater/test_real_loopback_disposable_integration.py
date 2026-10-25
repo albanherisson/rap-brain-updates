@@ -41,9 +41,9 @@ class RealLoopbackIntegration(unittest.TestCase):
   self.assertTrue(self.server.thread.is_alive())
   self.assertEqual(inventory(self.root),self.before)
  def test_unsigned_candidate_prevents_stop(self):
-  # Preflight rejects absent signature before any network call.
-  signed=False
-  if signed is not True:
-   self.assertTrue(self.server.thread.is_alive())
-   self.assertEqual(inventory(self.root),self.before)
+  from disposable_bundle_transaction import BundleRefused
+  with self.assertRaises(BundleRefused):
+   drill(self.root,signed_verified=False,healthy=True)
+  self.assertTrue(self.server.thread.is_alive())
+  self.assertEqual(inventory(self.root),self.before)
 if __name__=="__main__":unittest.main()
