@@ -25,7 +25,7 @@ def port():
 
 def probe(p, expected):
     try:
-        with urllib.request.urlopen(f'http://127.0.0.1:{p}/', timeout=.25) as r:
+        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(f'http://127.0.0.1:{p}/', timeout=.25) as r:
             return r.status == 200 and r.read(100) == (expected+'\n').encode()
     except Exception:
         return False
