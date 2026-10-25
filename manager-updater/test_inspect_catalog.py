@@ -38,6 +38,14 @@ class Tests(unittest.TestCase):
         raw = json.dumps(VALID).replace('"size": 100', '"size": NaN')
         with self.assertRaises(Reject):
             check_catalog_bytes(raw.encode(), verifier=lambda sig, payload: None)
+    def test_other_github_repository_rejected(self):
+        v=json.loads(json.dumps(VALID))
+        v['payload']['archive']['url']=v['payload']['archive']['url'].replace('/albanherisson/rap-brain-updates/', '/attacker/other/')
+        with self.assertRaises(Reject): check(v)
+    def test_wrong_pages_directory_rejected(self):
+        v=json.loads(json.dumps(VALID))
+        v['payload']['archive']['url']='https://albanherisson.github.io/other/Rap_Brain_Manager_1.0.6.zip'
+        with self.assertRaises(Reject): check(v)
     def test_unknown_field(self):
         v=json.loads(json.dumps(VALID));v["payload"]["delete_data"]=True
         with self.assertRaises(Reject): check(v)
