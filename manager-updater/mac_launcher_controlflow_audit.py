@@ -25,7 +25,6 @@ def analyze(source):
    node=parents[node]
    if isinstance(node,ast.Try):found.add("try")
    if isinstance(node,ast.ExceptHandler):found.add("except")
-   if isinstance(node,ast.Finally):found.add("finally") # AST doesn't expose Finally node
    if isinstance(node,(ast.While,ast.For)):found.add("loop")
   return ",".join(sorted(found)) or "plain"
  for node in ast.walk(tree):
