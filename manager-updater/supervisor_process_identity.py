@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import hmac
 import re
 
-_HEX = re.compile(r"[0-9a-f]{64}\\Z")
+_HEX = re.compile(r"[0-9a-f]{64}\Z")
 class IdentityRefused(ValueError):
     pass
 
