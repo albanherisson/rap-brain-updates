@@ -14,6 +14,10 @@ class Tests(unittest.TestCase):
         with self.assertRaises(InvalidSignedJSON):parse_signed_json(bytes([255]))
     def test_oversize(self):
         with self.assertRaises(InvalidSignedJSON):parse_signed_json(b" "*65537)
+    def test_float(self):
+        with self.assertRaises(InvalidSignedJSON):parse_signed_json(b'{"size":1.5}')
+    def test_exponent_overflow(self):
+        with self.assertRaises(InvalidSignedJSON):parse_signed_json(b'{"size":1e999}')
     def test_empty(self):
         with self.assertRaises(InvalidSignedJSON):parse_signed_json(b"")
 if __name__=="__main__":unittest.main()
