@@ -16,10 +16,10 @@ HOME = Path.home()
 ROOT = HOME / "Library/Application Support/RapBrainManager/isolated-dryrun"
 COPY = ROOT / "Rap Brain Manager - Isolated Copy.app"
 OUT = ROOT / "publisher-signed-candidate-1.0.6"
-SIGNER = HOME / "Applications/Rap Brain Manager.app/Contents/Resources/publisher_key.swift"
+SIGNER = Path("/tmp/rapbrain_publisher_key.swift")
 KEY_FILE = HOME / "Library/Application Support/RapBrainManager/publisher_ed25519.key"
 EXPECTED_MANAGER = "bdd2d65c9dce03fc11e0148879a5ed176ac96367aa7bce2e2874f6c72364d0d5"
-EXPECTED_SIGNER = "a661d2795eb11fb73221597bd6157ea520502cfbfd622392fcdea10ebfdae243"
+EXPECTED_SIGNER = "3b5470b45487c765ed4d50cf53fdd27b9f44d828f31ca74f1f3b3fa9f4a611ef"
 PUBKEY = "LwtwcLI4RHATP4OXL1UDlnXg9WUdSupoD8s25krcXMY="
 NAME = "Rap_Brain_Manager_1.0.6.zip"
 VERSION = "1.0.6"
@@ -40,7 +40,7 @@ def main():
     manager = regular(COPY / "Contents/Resources/manager.py", 2_000_000)
     signer = regular(SIGNER, 50_000)
     if sha(manager)!=EXPECTED_MANAGER or sha(signer)!=EXPECTED_SIGNER:
-        refuse("Installed source fingerprint differs from previously verified inventory")
+        refuse("Source fingerprint mismatch. Re-download pinned signing utility.")
     key_stat=KEY_FILE.lstat()
     if not stat.S_ISREG(key_stat.st_mode) or (stat.S_IMODE(key_stat.st_mode) & 0o077):
         refuse("Private signing key is missing or insecurely permissioned")
@@ -59,7 +59,9 @@ def main():
         signing_data.write_bytes(canonical)
         # Trusted, local Swift file: no remotely supplied code.
         signed=subprocess.run(["/usr/bin/swift",str(SIGNER),"sign",str(signing_data)],
-             capture_output=True,text=True,check=True,timeout=120)
+             capture_output=True,text=True,check=False,timeout=120)
+        if signed.returncode:
+            refuse("Swift signer failed (code %d): %s" % (signed.returncode, (signed.stderr or signed.stdout).strip()[:1600]))
         signature=signed.stdout.strip()
         if len(base64.b64decode(signature,validate=True))!=64: refuse("Signing result malformed")
         (OUT/"catalog.json").write_text(json.dumps({"payload":payload,"signature":signature},indent=2,ensure_ascii=False)+"\n")
