@@ -3,7 +3,7 @@
 No TCP ports, no PID files, no discovery/signaling of external processes.
 Only stops child handles this process directly created.
 """
-import os, select, subprocess, sys, tempfile
+import hashlib, os, select, subprocess, sys, tempfile
 from pathlib import Path
 
 CHILD = """import sys,time
@@ -17,7 +17,11 @@ class OwnedChild:
     def start(self,script,version):
         if self.process is not None:raise ChildError("Already owns a child")
         if version not in ("old","new"):raise ChildError("Unsafe fixture version")
-        if not Path(script).is_file():raise ChildError("Missing fixture")
+        path=Path(script)
+        if path.name!="owned_child.py" or not path.is_file() or path.is_symlink():
+            raise ChildError("Only owned_child.py test fixture is permitted")
+        if hashlib.sha256(path.read_bytes()).digest()!=hashlib.sha256(CHILD.encode()).digest():
+            raise ChildError("Unexpected child fixture content")
         process=subprocess.Popen([sys.executable,str(script),version],stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,bufsize=0)
         self.process=process
@@ -60,7 +64,7 @@ def transaction(fail_health=False, fail_start=False):
             os.replace(staged,target)
             try:
                 if fail_start:
-                    bad=root/"bad_child.py"
+                    bad=root/"owned_child.py"
                     bad.write_text("print('NOT_READY',flush=True)")
                     worker.start(bad,"new")
                 else:
