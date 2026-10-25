@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from disposable_cooperative_supervisor import DummyServer, fixture_transaction, Rejected
 from disposable_bundle_transaction import drill, inventory
+from supervisor_process_identity import preflight
 
 @dataclass(frozen=True)
 class Result:
@@ -14,7 +15,7 @@ class Result:
     bundle: str
     restored: bool
 
-def execute(transaction_root, bundle_root, server, secret, *, signed=True, health=True):
+def execute(transaction_root, bundle_root, server, secret, *, signed=True, health=True, expected_identity=None, observed_identity=None):
     transaction_root=Path(transaction_root)
     bundle_root=Path(bundle_root)
     before=inventory(bundle_root)
@@ -25,6 +26,9 @@ def execute(transaction_root, bundle_root, server, secret, *, signed=True, healt
         raise Rejected("fixture server / signed release required")
     if "Contents/Resources/manager.py" not in before or "Contents/Info.plist" not in before:
         raise Rejected("incomplete bundle")
+    if expected_identity is None or observed_identity is None:
+        raise Rejected('verified process observations required')
+    preflight(expected_identity, observed_identity, signed_release=signed, stop_supported=True)
     # Bundle change deliberately occurs after dummy stop; both stages are fixture-only.
     txn=fixture_transaction(transaction_root,server,secret,signed=signed,health=health)
     bundle=drill(bundle_root,signed_verified=signed,healthy=health)
