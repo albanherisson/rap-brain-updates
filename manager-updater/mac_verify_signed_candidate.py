@@ -21,7 +21,7 @@ ENTRY = "Contents/Resources/manager.py"
 SWIFT = r'''import Foundation
 import CryptoKit
 let keyB64 = "LwtwcLI4RHATP4OXL1UDlnXg9WUdSupoD8s25krcXMY="
-func fail(_ s: String) -> Never { fputs("REFUS: \\(s)\\n", stderr); exit(1) }
+func fail(_ s: String) -> Never { fputs("REFUS: \(s)\n", stderr); exit(1) }
 let a = CommandLine.arguments
 guard a.count == 3 else { fail("arguments invalides") }
 guard let kd = Data(base64Encoded:keyB64), kd.count == 32,
