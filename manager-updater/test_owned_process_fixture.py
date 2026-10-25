@@ -37,6 +37,10 @@ class Tests(unittest.TestCase):
   wrong=self.root.parent/"Rap Brain Manager.app"
   self.root.rename(wrong)
   with self.assertRaises(Refuse):start_owned(wrong)
+ def test_symlink_child_script_refused(self):
+  self.script.unlink()
+  self.script.symlink_to('/tmp/nonexistent')
+  with self.assertRaises(Exception):start_owned(self.root)
  def test_no_arbitrary_pid(self):
   with self.assertRaises(Refuse):owned_is_running(12345)
  def test_already_exited(self):
