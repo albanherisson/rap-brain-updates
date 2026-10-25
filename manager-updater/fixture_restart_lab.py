@@ -18,13 +18,22 @@ def free_port():
         return s.getsockname()[1]
 
 LAST_PROBE = 'not tried'
+def raw_http(port):
+    with socket.create_connection(("127.0.0.1",port),timeout=.4) as sock:
+        sock.settimeout(.4)
+        sock.sendall(b"GET / HTTP/1.0\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n")
+        data=b""
+        while len(data)<1024:
+            part=sock.recv(1024)
+            if not part:break
+            data+=part
+        return data
 def healthy(port):
     global LAST_PROBE
     try:
-        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(f"http://127.0.0.1:{port}/",timeout=.2) as r:
-            body=r.read(64)
-            LAST_PROBE=f"status={r.status}, body={body!r}"
-            return r.status==200 and body==b"FIXTURE_ONLY\n"
+        response=raw_http(port)
+        LAST_PROBE=repr(response[:200])
+        return response.startswith(b"HTTP/1.0 200 ") and response.endswith(b"FIXTURE_ONLY\n")
     except Exception as exc:
         LAST_PROBE=type(exc).__name__+": "+str(exc)[:150]
         return False
