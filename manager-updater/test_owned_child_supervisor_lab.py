@@ -9,7 +9,7 @@ class Tests(unittest.TestCase):
         self.assertEqual(transaction(fail_start=True),"ROLLED_BACK")
     def test_owned_process_stops(self):
         with tempfile.TemporaryDirectory() as d:
-            p=Path(d)/"fixture_child.py";p.write_text(CHILD)
+            p=Path(d)/"owned_child.py";p.write_text(CHILD)
             owner=OwnedChild()
             pid=owner.start(p,"old")
             self.assertGreater(pid,1)
@@ -17,7 +17,7 @@ class Tests(unittest.TestCase):
             self.assertIsNone(owner.process)
     def test_double_start_refused(self):
         with tempfile.TemporaryDirectory() as d:
-            p=Path(d)/"fixture_child.py";p.write_text(CHILD)
+            p=Path(d)/"owned_child.py";p.write_text(CHILD)
             owner=OwnedChild()
             try:
                 owner.start(p,"old")
@@ -25,13 +25,13 @@ class Tests(unittest.TestCase):
             finally:owner.stop()
     def test_unknown_version_refused(self):
         with tempfile.TemporaryDirectory() as d:
-            p=Path(d)/"fixture_child.py";p.write_text(CHILD)
+            p=Path(d)/"owned_child.py";p.write_text(CHILD)
             with self.assertRaises(ChildError):OwnedChild().start(p,"danger")
     def test_nonexistent_child_refused(self):
         with self.assertRaises(ChildError):OwnedChild().start("/does/not/exist","old")
     def test_bad_handshake_refused(self):
         with tempfile.TemporaryDirectory() as d:
-            p=Path(d)/"fixture_child.py";p.write_text("print('BAD',flush=True)")
+            p=Path(d)/"owned_child.py";p.write_text("print('BAD',flush=True)")
             owner=OwnedChild()
             with self.assertRaises(ChildError):owner.start(p,"old")
             self.assertIsNone(owner.process)
