@@ -1,0 +1,33 @@
+name: Manager updater safety tests
+on:
+  push:
+    paths:
+      - "manager-updater/**"
+      - ".github/workflows/manager-updater-tests.yml"
+  pull_request:
+    paths:
+      - "manager-updater/**"
+      - ".github/workflows/manager-updater-tests.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python-tests:
+    name: Python safety tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run read-only updater unit tests
+        run: python -m unittest discover -s manager-updater -p 'test_*.py' -v
+  mac-cryptokit:
+    name: macOS CryptoKit identity test
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pinned publisher identity and tamper rejection
+        run: swift manager-updater/mac_readonly_signature_test.swift
