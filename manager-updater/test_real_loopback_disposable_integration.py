@@ -36,8 +36,9 @@ class RealLoopbackIntegration(unittest.TestCase):
   self.assertEqual(inventory(self.root),self.before)
  def test_wrong_secret_prevents_mutation(self):
   from urllib.error import HTTPError
-  with self.assertRaises(HTTPError):
+  with self.assertRaises(HTTPError) as error:
    authenticated_stop(self.server,secrets.token_bytes(32),self.port)
+  error.exception.close()
   self.assertTrue(self.server.thread.is_alive())
   self.assertEqual(inventory(self.root),self.before)
  def test_unsigned_candidate_prevents_stop(self):
