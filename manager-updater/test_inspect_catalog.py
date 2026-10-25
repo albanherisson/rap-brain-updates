@@ -46,6 +46,18 @@ class Tests(unittest.TestCase):
         v=json.loads(json.dumps(VALID))
         v['payload']['archive']['url']='https://albanherisson.github.io/other/Rap_Brain_Manager_1.0.6.zip'
         with self.assertRaises(Reject): check(v)
+    def test_bad_port_rejected(self):
+        v=json.loads(json.dumps(VALID))
+        v['payload']['archive']['url']=v['payload']['archive']['url'].replace('github.com/', 'github.com:xyz/')
+        with self.assertRaises(Reject): check(v)
+    def test_numeric_port_rejected(self):
+        v=json.loads(json.dumps(VALID))
+        v['payload']['archive']['url']=v['payload']['archive']['url'].replace('github.com/', 'github.com:8443/')
+        with self.assertRaises(Reject): check(v)
+    def test_missing_file_url_name_rejected(self):
+        v=json.loads(json.dumps(VALID))
+        v['payload']['archive']['url']=v['payload']['archive']['url'].replace('Rap_Brain_Manager_1.0.6.zip', 'wrong.zip')
+        with self.assertRaises(Reject): check(v)
     def test_unknown_field(self):
         v=json.loads(json.dumps(VALID));v["payload"]["delete_data"]=True
         with self.assertRaises(Reject): check(v)
