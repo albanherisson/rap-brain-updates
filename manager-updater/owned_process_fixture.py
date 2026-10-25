@@ -28,7 +28,7 @@ def _regular_bytes(path):
     return path.read_bytes()
 
 def prepare_fixture(root):
-    root=Path(root).resolve()
+    root=Path(root).absolute()
     if root.name!="DisposableProcessFixture" or not root.is_dir() or root.is_symlink():
         raise Refuse("Not a disposable fixture")
     if (root/"fixture.marker").is_symlink() or (root/"fixture.marker").read_bytes()!=MARKER:
