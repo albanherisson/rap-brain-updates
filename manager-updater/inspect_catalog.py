@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from urllib.parse import urlsplit
 from zip_gate import verify_zip, UnsafeArchive
+from strict_json import parse_signed_json, InvalidSignedJSON
 
 PINNED_PUBLISHER_KEY = "LwtwcLI4RHATP4OXL1UDlnXg9WUdSupoD8s25krcXMY="
 MAX_CATALOG_BYTES = 65536
@@ -27,9 +28,9 @@ def check_catalog_bytes(raw, archive_path=None, verifier=None):
     if not 0 < len(raw) <= MAX_CATALOG_BYTES:
         raise Reject("Catalog size outside bounds")
     try:
-        envelope = json.loads(raw)
-    except (UnicodeError, ValueError) as exc:
-        raise Reject("Invalid JSON catalog") from exc
+        envelope = parse_signed_json(raw)
+    except InvalidSignedJSON as exc:
+        raise Reject("Invalid or ambiguous signed JSON catalog") from exc
     if type(envelope) is not dict or set(envelope) != {"payload", "signature"}:
         raise Reject("Unexpected envelope fields")
     payload, signature = envelope["payload"], envelope["signature"]
