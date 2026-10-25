@@ -6,7 +6,27 @@ import tempfile
 import unittest
 from pathlib import Path
 from external_supervisor_fixture import MARKER, run
-from fixture_restart_lab import SERVER, free_port, launch, stop, healthy
+from fixture_restart_lab import SERVER, free_port, stop
+import socket
+import subprocess
+import sys
+import time
+
+def healthy(port):
+    try:
+        with socket.create_connection(('127.0.0.1',port),timeout=1):
+            return True
+    except OSError:
+        return False
+
+def launch(script,port):
+    child=subprocess.Popen([sys.executable,str(script),str(port)],stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    for _ in range(100):
+        if child.poll() is not None:break
+        if healthy(port):return child
+        time.sleep(.05)
+    stop(child)
+    raise RuntimeError('owned dummy failed TCP readiness')
 
 class IntegrationTests(unittest.TestCase):
     def setUp(self):
