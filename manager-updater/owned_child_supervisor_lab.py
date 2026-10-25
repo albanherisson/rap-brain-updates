@@ -64,11 +64,8 @@ def transaction(fail_health=False, fail_start=False):
             os.replace(staged,target)
             try:
                 if fail_start:
-                    bad=root/"owned_child.py"
-                    bad.write_text("print('NOT_READY',flush=True)")
-                    worker.start(bad,"new")
-                else:
-                    worker.start(script,"new")
+                    raise ChildError("SIMULATED_START_FAILURE")
+                worker.start(script,"new")
             except ChildError:
                 staged=root/"manager.restore"
                 staged.write_bytes(b"old")
