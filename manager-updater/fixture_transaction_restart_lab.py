@@ -23,10 +23,20 @@ def port():
         s.bind(('127.0.0.1', 0))
         return s.getsockname()[1]
 
+def raw_http(port):
+    with socket.create_connection(("127.0.0.1",port),timeout=.4) as sock:
+        sock.settimeout(.4)
+        sock.sendall(b"GET / HTTP/1.0\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n")
+        data=b""
+        while len(data)<1024:
+            part=sock.recv(1024)
+            if not part:break
+            data+=part
+        return data
 def probe(p, expected):
     try:
-        with urllib.request.build_opener(urllib.request.ProxyHandler({})).open(f'http://127.0.0.1:{p}/', timeout=.25) as r:
-            return r.status == 200 and r.read(100) == (expected+'\n').encode()
+        response=raw_http(p)
+        return response.startswith(b'HTTP/1.0 200 ') and response.endswith((expected+'\n').encode())
     except Exception:
         return False
 
