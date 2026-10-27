@@ -92,7 +92,10 @@ class Transaction:
         safe_path(self.state, directory=True)
         if self.state.stat().st_uid != os.getuid() or self.state.stat().st_mode & 0o077:
             raise Refused('private_state_directory_required')
-        fd = os.open(self.state / 'update.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        # Serializes updater instances. The separate update.lock is shared
+        # with the server's lifetime guard and acquired by the lifecycle
+        # adapter only AFTER verified writers have stopped.
+        fd = os.open(self.state / 'transaction.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             yield

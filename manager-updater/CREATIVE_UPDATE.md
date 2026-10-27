@@ -105,6 +105,18 @@ not accept a PID or attach to an existing Rap Brain process. This proves the
 transaction/lifecycle interface works with a real subprocess; it does not prove
 safe shutdown of the actual server and analysis worker.
 
+`server_lifetime_guard.py` prepares an isolated copy of the exact pinned
+server source with a shared, nonblocking OS lock held for each process lifetime.
+The unchanged Manager's transaction lock is now distinct from this server
+admission lock. The future lifecycle adapter stops its verified, idle parent and
+worker first, then takes the server lock exclusively; a simultaneous new server
+start loses the lock and aborts before calling `init()` or opening the database.
+An executable fixture verifies this with two real Python processes, including
+restart after lock release. This is only source preparation on copies: there is
+no patched `server.py` installed on the owner's Mac, no signed bootstrap release,
+and no production lifecycle adapter yet. A first bootstrap must be designed and
+signed separately before this guard can protect subsequent updates.
+
 ## Next evidence needed
 
 The earlier source review deliberately omitted `server.py` because it might
