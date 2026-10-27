@@ -66,6 +66,25 @@ database schema; automatic rollback does not reverse application-side writes.
 
 ## Server structure received from the owner (27 October 2026)
 
+The exact Beta 14 application archive is available separately in the project
+files (483,156 bytes). Its `launch_manager.py` hashes to
+`362ad3e1e3878cc49b90f76e212211e328e514b97c5a49b52921c0b4669964ba`;
+the bundled candidate `manager.py` hashes to
+`bdd2d65c9dce03fc11e0148879a5ed176ac96367aa7bce2e2874f6c72364d0d5`.
+The launcher and dashboard compile/parse locally. This is source evidence,
+not proof that the identical bytes remain on the owner's Mac.
+
+The Beta 14 launch controller retains the exact `subprocess.Popen` handle for
+a server it starts, but explicitly leaves automatic stopping disabled. It
+checks port 8765 before launch, spawns `server.py` in a separate session,
+and later polls that handle. It does not identify or stop a pre-existing
+server, worker, or audio capture process. Its real installation buttons are
+disabled; the signed Creative Engine action invokes the P10 copy rehearsal.
+The disposable Manager HTTP child is terminated when Beta 14 closes, while
+the launched Rap Brain server is deliberately left running. The future
+production adapter can reuse the retained handle only for a server launched
+by this Manager instance; other cases must refuse until ownership is proved.
+
 The redacted AST output matches the earlier `server.py` SHA-256
 `4380ab4fd97d727ced4521eb66b11004e21f9f15c0eafaee955f1f0145913ad7`.
 It confirms that `__main__` calls `init()`, starts `supervise_worker` and serves
