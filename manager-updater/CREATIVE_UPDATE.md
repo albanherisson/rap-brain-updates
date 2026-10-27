@@ -84,6 +84,17 @@ The disposable Manager HTTP child is terminated when Beta 14 closes, while
 the launched Rap Brain server is deliberately left running. The future
 production adapter can reuse the retained handle only for a server launched
 by this Manager instance; other cases must refuse until ownership is proved.
+The original Beta 14 archive passed its bundled `--smoke-test` in a disposable
+Linux directory with a nonexistent Rap Brain source and separate test backup
+path. It reported real stopping disabled and production POST operations blocked.
+This does not substitute for macOS or live-server tests.
+
+A separately saved `server.py` in the project has SHA-256
+`14c9cc00e6794a4d9709750f93a9d600cb525ad35973b85b88f8ada57a967b51`;
+the archived `rap-brain.zip` server has
+`8dbea5e4a2f0d4ec696fe0cb4719105db195a27e678e5fe6bf0b0a3dd79d31e6`.
+Neither matches the live-server source hash below. They are historical copies,
+not a basis for producing a production patch.
 
 The redacted AST output matches the earlier `server.py` SHA-256
 `4380ab4fd97d727ced4521eb66b11004e21f9f15c0eafaee955f1f0145913ad7`.
