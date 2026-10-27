@@ -117,6 +117,12 @@ no patched `server.py` installed on the owner's Mac, no signed bootstrap release
 and no production lifecycle adapter yet. A first bootstrap must be designed and
 signed separately before this guard can protect subsequent updates.
 
+Crash drills also terminate the updater subprocess after a durable verified
+backup, immediately before replacement, and immediately after replacement
+but before the journal advances. Recovery aborts the first without changing
+the engine and restores the original code in the latter two cases. These are
+disposable fixture drills; they have not been run against the live app.
+
 ## Next evidence needed
 
 The earlier source review deliberately omitted `server.py` because it might

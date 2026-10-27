@@ -306,7 +306,7 @@ class CreativeTests(unittest.TestCase):
         with self.assertRaisesRegex(Refused, 'journal_source_mismatch'):
             tx.recover()
 
-    def crash_after_replace(self):
+    def crash_at(self, phase='switched'):
         (self.root / 'manifest.json').write_bytes(self.signed())
         (self.root / 'update.zip').write_bytes(self.archive)
         program = '''import os, sys
@@ -317,26 +317,43 @@ root = Path(sys.argv[1])
 tx = Transaction(root/'source', root/'state', FixtureLifecycle(), pinned_key=sys.argv[2])
 save = tx.record
 def crash(record, phase):
-    if phase == 'switched': os._exit(91)
+    if phase == sys.argv[3]:
+        if phase != 'switched': save(record, phase)
+        os._exit(91)
     save(record, phase)
 tx.record = crash
 tx.install((root/'manifest.json').read_bytes(), (root/'update.zip').read_bytes())
 '''
-        result = subprocess.run([sys.executable, '-c', program, str(self.root), self.pin],
+        result = subprocess.run([sys.executable, '-c', program, str(self.root), self.pin, phase],
                                 cwd=Path(__file__).parent, timeout=15)
         self.assertEqual(result.returncode, 91)
-        self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.after)
+        self.assertEqual((self.source / 'creative_engine.py').read_bytes(),
+                         self.after if phase == 'switched' else self.before)
 
     def test_actual_process_crash_recovery(self):
-        self.crash_after_replace()
+        self.crash_at()
         result = self.transaction().recover()
         self.assertEqual(result['state'], 'rolled_back')
         self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
         self.assertEqual(self.data_snapshot(), self.original_data)
         self.assertIsNone(self.transaction().recover())
 
+    def test_crash_after_backup_aborts_without_installing(self):
+        self.crash_at('backup_ready')
+        result = self.transaction().recover()
+        self.assertEqual(result['state'], 'aborted')
+        self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
+        self.assertEqual(self.data_snapshot(), self.original_data)
+
+    def test_crash_before_swap_rolls_back_copy(self):
+        self.crash_at('switch_pending')
+        result = self.transaction().recover()
+        self.assertEqual(result['state'], 'rolled_back')
+        self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
+        self.assertEqual(self.data_snapshot(), self.original_data)
+
     def test_corrupt_backup_is_preserved_not_used(self):
-        self.crash_after_replace()
+        self.crash_at()
         record = json.loads((self.root / 'state' / 'transaction.json').read_text())
         (self.root / 'state' / record['id'] / 'creative_engine.before.py').write_bytes(b'bad')
         with self.assertRaisesRegex(Refused, 'rollback_backup_corrupt'):
@@ -344,7 +361,7 @@ tx.install((root/'manifest.json').read_bytes(), (root/'update.zip').read_bytes()
         self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.after)
 
     def test_recovery_does_not_overwrite_unexpected_edit(self):
-        self.crash_after_replace()
+        self.crash_at()
         (self.source / 'creative_engine.py').write_bytes(b'# manual repair')
         with self.assertRaisesRegex(Refused, 'unexpected_live_code'):
             self.transaction().recover()
