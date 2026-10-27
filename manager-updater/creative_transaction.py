@@ -93,8 +93,10 @@ class Transaction:
         if self.state.stat().st_uid != os.getuid() or self.state.stat().st_mode & 0o077:
             raise Refused('private_state_directory_required')
         # Serializes updater instances. The separate update.lock is shared
-        # with the server's lifetime guard and acquired by the lifecycle
-        # adapter only AFTER verified writers have stopped.
+        # with the server's lifetime guard. A future lifecycle adapter must
+        # acquire it only after verified writers stop, release it for its
+        # guarded candidate restart, and retain a separate maintenance gate
+        # against unrelated launches throughout that handoff.
         fd = os.open(self.state / 'transaction.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)

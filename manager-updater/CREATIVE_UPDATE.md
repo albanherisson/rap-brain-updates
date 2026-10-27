@@ -127,9 +127,15 @@ safe shutdown of the actual server and analysis worker.
 `server_lifetime_guard.py` prepares an isolated copy of the exact pinned
 server source with a shared, nonblocking OS lock held for each process lifetime.
 The unchanged Manager's transaction lock is now distinct from this server
-admission lock. The future lifecycle adapter stops its verified, idle parent and
-worker first, then takes the server lock exclusively; a simultaneous new server
-start loses the lock and aborts before calling `init()` or opening the database.
+admission lock. The future lifecycle adapter must stop its verified, idle parent
+and worker first, then take the server lock exclusively; a simultaneous new
+server start loses the lock and aborts before calling `init()` or opening the
+database. It must release that exclusive lock before starting its guarded
+candidate, since the candidate needs a shared lock. A separate durable
+maintenance gate must still reject unrelated launches and new jobs across
+this handoff, through health verification and commit or rollback. The current
+guard by itself cannot provide that handoff, and must not be treated as a
+complete production admission protocol.
 An executable fixture verifies this with two real Python processes, including
 restart after lock release. This is only source preparation on copies: there is
 no patched `server.py` installed on the owner's Mac, no signed bootstrap release,
