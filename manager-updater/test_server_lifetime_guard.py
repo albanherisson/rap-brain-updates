@@ -135,7 +135,7 @@ class LifetimeGuardTests(unittest.TestCase):
 
     def test_malformed_marker_refuses_even_matching_environment(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             home = root / 'home'
             home.mkdir()
             script = root / 'server.py'
