@@ -64,6 +64,29 @@ maintenance state if transaction setup fails before the durable journal exists.
 Both successful and rollback startup must be compatible with the unchanged
 database schema; automatic rollback does not reverse application-side writes.
 
+## Server structure received from the owner (27 October 2026)
+
+The redacted AST output matches the earlier `server.py` SHA-256
+`4380ab4fd97d727ced4521eb66b11004e21f9f15c0eafaee955f1f0145913ad7`.
+It confirms that `__main__` calls `init()`, starts `supervise_worker` and serves
+HTTP. `supervise_worker` launches a second Python process running `worker_main`;
+that process takes a file lock, calls `resume_jobs()` and loops over queued
+jobs. The HTTP process's `finally` block requests worker termination and may
+kill it after a timeout. An audio capture process is tracked separately by
+`AUDIO_STATE`. `/api/status` reports Ollama/model availability, and `/api/jobs`
+returns database rows; neither authenticates the server process or establishes
+that the worker and audio process are idle.
+
+Therefore the current Manager's HTTP port probe, a single jobs-list read, or
+termination of an arbitrary PID cannot justify an update. The next integration
+must establish a durable maintenance gate before job admission and before
+`resume_jobs()`, quiesce both supervisor and worker without interrupting an
+analysis, account for audio capture, and bind the process identity and health
+check to the Manager-owned launch. An external controller must recover a pending
+transaction before any normal server launch. The redacted AST hides literals,
+including SQL and endpoint names, so these requirements are confirmed but the
+precise gate implementation cannot be safely derived from this export alone.
+
 ## Next evidence needed
 
 The earlier source review deliberately omitted `server.py` because it might
