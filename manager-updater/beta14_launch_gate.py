@@ -11,7 +11,7 @@ from pathlib import Path
 EXPECTED_LAUNCHER_SHA256 = '362ad3e1e3878cc49b90f76e212211e328e514b97c5a49b52921c0b4669964ba'
 
 GATE = '''# Rap Brain ordinary launch gate v1.
-def __rb_ordinary_launch_guard_v1(backup_dir):
+def __rb_ordinary_launch_guard_v1(backup_dir, rap_dir):
     import json as __rb_json
     import os as __rb_os
     import stat as __rb_stat
@@ -40,8 +40,16 @@ def __rb_ordinary_launch_guard_v1(backup_dir):
         try:
             with __rb_journal.open('rb') as __rb_stream:
                 __rb_record = __rb_json.loads(__rb_stream.read(8193))
+            __rb_id = __rb_record.get('id') if type(__rb_record) is dict else None
             if (type(__rb_record) is not dict or
-                    __rb_record.get('phase') not in ('committed', 'rolled_back', 'aborted')):
+                    __rb_record.get('phase') not in ('committed', 'rolled_back', 'aborted') or
+                    __rb_record.get('source') != str(rap_dir) or
+                    type(__rb_record.get('sequence')) is not int or
+                    __rb_record['sequence'] < 1 or
+                    type(__rb_record.get('mode')) is not int or
+                    not 0 <= __rb_record['mode'] <= 0o777 or
+                    type(__rb_id) is not str or len(__rb_id) != 32 or
+                    any(__rb_c not in '0123456789abcdef' for __rb_c in __rb_id)):
                 raise RuntimeError('update_recovery_required')
         except (ValueError, UnicodeError):
             raise RuntimeError('update_recovery_required')
@@ -73,7 +81,7 @@ def prepare(raw, expected_sha256=EXPECTED_LAUNCHER_SHA256):
         raise ValueError('unsupported_launch_format')
     # A refusal enters the existing exception handler and creates the same
     # launch-state report as other Beta 14 refusals. Never spawn on refusal.
-    lines.insert(attempt.body[0].lineno - 1, '        __rb_ordinary_launch_guard_v1(backup_dir)\n')
+    lines.insert(attempt.body[0].lineno - 1, '        __rb_ordinary_launch_guard_v1(backup_dir, rap_dir)\n')
     lines.insert(function.lineno - 1, GATE)
     candidate = ''.join(lines).encode('utf-8')
     compile(candidate, 'launch_manager.py', 'exec')

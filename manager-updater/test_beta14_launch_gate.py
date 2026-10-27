@@ -25,7 +25,7 @@ class LaunchGateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unknown_beta14_launcher'):
             prepare(FIXTURE)
         modified = prepare(FIXTURE, hashlib.sha256(FIXTURE).hexdigest())
-        self.assertIn(b'__rb_ordinary_launch_guard_v1(backup_dir)', modified)
+        self.assertIn(b'__rb_ordinary_launch_guard_v1(backup_dir, rap_dir)', modified)
         with self.assertRaisesRegex(ValueError, 'already_patched'):
             prepare(modified, hashlib.sha256(modified).hexdigest())
 
@@ -58,10 +58,18 @@ class LaunchGateTests(unittest.TestCase):
             self.assertEqual(state.get('refused'), 'update_recovery_required')
             self.assertNotIn('spawned', state)
 
-            journal.write_text(json.dumps({'phase': 'committed'}))
+            journal.write_text(json.dumps({'phase': 'committed', 'source': str(root),
+                                           'sequence': 1, 'mode': 0o644, 'id': 'a' * 32}))
             state.clear()
             namespace['handle_launch_request'](root, root, backup, state)
             self.assertTrue(state.get('spawned'))
+
+            request.touch()
+            journal.write_text(json.dumps({'phase': 'committed', 'source': str(root / 'other'),
+                                           'sequence': 1, 'mode': 0o644, 'id': 'a' * 32}))
+            state.clear()
+            namespace['handle_launch_request'](root, root, backup, state)
+            self.assertEqual(state.get('refused'), 'update_recovery_required')
 
     def test_malformed_and_symlink_marker_fail_closed(self):
         namespace = {}
