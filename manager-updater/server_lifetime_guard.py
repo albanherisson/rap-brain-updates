@@ -103,13 +103,34 @@ def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
     return candidate
 
 
-POST_GATE = '''# Rap Brain maintenance POST admission gate v1.
-def _rb_update_blocks_posts_v1():
+POST_GATE = '''# Rap Brain maintenance POST admission gate v2.
+_rb_original_do_post_v2 = Handler.do_POST
+def _rb_guarded_do_post_v2(self):
+    import fcntl as __rb_fcntl
     import os as __rb_os
+    import stat as __rb_stat
     from pathlib import Path as __rb_Path
     __rb_state = (__rb_Path.home() / 'Downloads' /
                   'RapBrainManagerBackups' / 'secure-update')
-    return __rb_os.path.lexists(__rb_state / 'maintenance.ticket')
+    __rb_fd = __rb_os.open(__rb_state / 'admission.lock',
+                          __rb_os.O_CREAT | __rb_os.O_RDWR | __rb_os.O_NOFOLLOW, 0o600)
+    try:
+        __rb_info = __rb_os.fstat(__rb_fd)
+        if (__rb_info.st_uid != __rb_os.getuid() or
+                not __rb_stat.S_ISREG(__rb_info.st_mode) or
+                __rb_info.st_mode & 0o077):
+            raise RuntimeError('unsafe_admission_lock')
+        try:
+            __rb_fcntl.flock(__rb_fd, __rb_fcntl.LOCK_SH | __rb_fcntl.LOCK_NB)
+        except BlockingIOError:
+            return self.send({'error': 'update_in_progress'}, 503)
+        if __rb_os.path.lexists(__rb_state / 'maintenance.ticket'):
+            return self.send({'error': 'update_in_progress'}, 503)
+        return _rb_original_do_post_v2(self)
+    finally:
+        __rb_os.close(__rb_fd)
+
+Handler.do_POST = _rb_guarded_do_post_v2
 
 '''
 
@@ -132,12 +153,11 @@ def prepare_admission(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
             lines[post.lineno - 1].strip() != 'def do_POST(self):' or
             post.body[0].lineno <= post.lineno):
         raise ValueError('unsupported_post_format')
-    # Before request-body parsing or route dispatch. The GET health endpoint
-    # remains available, but every POST (including jobs/audio) is rejected.
-    lines.insert(post.body[0].lineno - 1,
-                 "        if _rb_update_blocks_posts_v1():\n"
-                 "            return self.send({'error': 'update_in_progress'}, 503)\n")
-    lines.insert(handler.lineno - 1, POST_GATE)
+    # Wrap the entire original handler, including in-flight writes. The
+    # updater will take admission.lock exclusively, create the marker, then
+    # release the short admission lock before stopping the idle parent.
+    # GET health is not wrapped; every POST (including jobs/audio) is.
+    lines.insert(handler.end_lineno, POST_GATE)
     output = ''.join(lines).encode('utf-8')
     compile(output, 'server.py', 'exec')
     return output

@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 
 from server_lifetime_guard import prepare, prepare_admission, prepare_copy
@@ -45,12 +46,53 @@ class LifetimeGuardTests(unittest.TestCase):
             old_home = os.environ.get('HOME')
             try:
                 os.environ['HOME'] = str(home)
-                self.assertEqual(handler.do_POST()[1], 200)
                 state = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
                 state.mkdir(parents=True, mode=0o700)
+                self.assertEqual(handler.do_POST()[1], 200)
                 (state / 'maintenance.ticket').write_text('a' * 64 + '\n')
                 self.assertEqual(handler.do_POST(), ({'error': 'update_in_progress'}, 503))
                 self.assertEqual(handler.do_GET(), ({'healthy': True}, 200))
+            finally:
+                if old_home is None:
+                    os.environ.pop('HOME', None)
+                else:
+                    os.environ['HOME'] = old_home
+
+    def test_in_flight_post_holds_admission_lock_until_finished(self):
+        fixture = HTTP_FIXTURE.replace(
+            b"return self.send({'created': True}, 200)",
+            b"self.entered.set(); self.resume.wait(5); return self.send({'created': True}, 200)")
+        namespace = {'__name__': 'fixture'}
+        exec(prepare_admission(fixture, hashlib.sha256(fixture).hexdigest()), namespace)
+        handler = namespace['Handler'].__new__(namespace['Handler'])
+        handler.entered = threading.Event()
+        handler.resume = threading.Event()
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp).resolve() / 'home'
+            home.mkdir()
+            old_home = os.environ.get('HOME')
+            try:
+                os.environ['HOME'] = str(home)
+                state = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
+                state.mkdir(parents=True, mode=0o700)
+                thread = threading.Thread(target=handler.do_POST)
+                thread.start()
+                self.assertTrue(handler.entered.wait(5))
+                fd = os.open(state / 'admission.lock', os.O_RDWR | os.O_NOFOLLOW)
+                try:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    handler.resume.set()
+                    thread.join(5)
+                    self.assertFalse(thread.is_alive())
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    (state / 'maintenance.ticket').write_text('a' * 64 + '\n')
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                    self.assertEqual(handler.do_POST()[1], 503)
+                finally:
+                    handler.resume.set()
+                    thread.join(5)
+                    os.close(fd)
             finally:
                 if old_home is None:
                     os.environ.pop('HOME', None)
