@@ -74,6 +74,84 @@ class LifetimeGuardTests(unittest.TestCase):
                 one.stdout.close()
                 one.stderr.close()
 
+    def test_durable_maintenance_ticket_excludes_unrelated_launches(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            home = root / 'home'
+            home.mkdir()
+            script = root / 'server.py'
+            script.write_bytes(prepare(FIXTURE, hashlib.sha256(FIXTURE).hexdigest()))
+            env = dict(os.environ, HOME=str(home), PYTHONDONTWRITEBYTECODE='1')
+            # First boot creates the private lock directory. The external
+            # updater would write the marker only after verified shutdown
+            # while holding this lock exclusively.
+            self.assertEqual(subprocess.run([sys.executable, '-B', str(script)], env=env,
+                                            capture_output=True, timeout=5).returncode, 0)
+            state = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
+            fd = os.open(state / 'update.lock', os.O_RDWR | os.O_NOFOLLOW)
+            ticket = 'a' * 64
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                marker = state / 'maintenance.ticket'
+                with marker.open('xb') as stream:
+                    stream.write((ticket + '\n').encode())
+                os.chmod(marker, 0o600)
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                for offered in (None, 'b' * 64):
+                    trial_env = dict(env)
+                    if offered is None:
+                        trial_env.pop('RB_UPDATE_LAUNCH_TICKET', None)
+                    else:
+                        trial_env['RB_UPDATE_LAUNCH_TICKET'] = offered
+                    result = subprocess.run([sys.executable, '-B', str(script)], env=trial_env,
+                                            capture_output=True, text=True, timeout=5)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertNotIn('READY', result.stdout)
+                candidate_env = dict(env, RB_UPDATE_LAUNCH_TICKET=ticket)
+                candidate = subprocess.Popen([sys.executable, '-B', str(script)], env=candidate_env,
+                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    self.assertEqual(candidate.stdout.readline().strip(), 'READY')
+                    self.assertNotEqual(subprocess.run([sys.executable, '-B', str(script)], env=env,
+                                                       capture_output=True, timeout=5).returncode, 0)
+                    candidate.wait(timeout=5)
+                finally:
+                    if candidate.poll() is None:
+                        candidate.terminate()
+                        candidate.wait(timeout=5)
+                    candidate.stdout.close()
+                    candidate.stderr.close()
+                # A crash leaves the marker in place and normal startup
+                # blocked until the external transaction recovers.
+                self.assertNotEqual(subprocess.run([sys.executable, '-B', str(script)], env=env,
+                                                   capture_output=True, timeout=5).returncode, 0)
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                marker.unlink()
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                self.assertEqual(subprocess.run([sys.executable, '-B', str(script)], env=env,
+                                                capture_output=True, timeout=5).returncode, 0)
+            finally:
+                os.close(fd)
+
+    def test_malformed_marker_refuses_even_matching_environment(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / 'home'
+            home.mkdir()
+            script = root / 'server.py'
+            script.write_bytes(prepare(FIXTURE, hashlib.sha256(FIXTURE).hexdigest()))
+            env = dict(os.environ, HOME=str(home), PYTHONDONTWRITEBYTECODE='1',
+                       RB_UPDATE_LAUNCH_TICKET='a' * 64)
+            self.assertEqual(subprocess.run([sys.executable, '-B', str(script)], env=env,
+                                            capture_output=True, timeout=5).returncode, 0)
+            marker = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update' / 'maintenance.ticket'
+            marker.write_text('bad\n')
+            os.chmod(marker, 0o600)
+            result = subprocess.run([sys.executable, '-B', str(script)], env=env,
+                                    capture_output=True, text=True, timeout=5)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn('READY', result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -3,6 +3,9 @@
 The inserted lifetime guard keeps a shared OS lock for the complete life of
 both the HTTP parent and its worker subprocess. An external updater acquires
 the same file exclusively, nonblocking, only after stopping verified processes.
+During its restart handoff a durable marker admits only a child launched with
+the matching maintenance ticket. The marker must be created under the exclusive
+lock and retained until the transaction reaches a terminal state.
 This is a source preparation step, not a distribution or production installer.
 """
 import ast
@@ -11,11 +14,12 @@ from pathlib import Path
 
 EXPECTED_SOURCE_SHA256 = '4380ab4fd97d727ced4521eb66b11004e21f9f15c0eafaee955f1f0145913ad7'
 
-GUARD = '''# Rap Brain update lifetime guard v1 — preserve through upgrades.
-def __rb_update_guard_v1():
+GUARD = '''# Rap Brain update lifetime guard v2 — preserve through upgrades.
+def __rb_update_guard_v2():
     import fcntl as __rb_fcntl
     import os as __rb_os
     import stat as __rb_stat
+    import secrets as __rb_secrets
     from pathlib import Path as __rb_Path
     __rb_root = __rb_Path.home() / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
     if any(__rb_part.is_symlink() for __rb_part in
@@ -34,6 +38,31 @@ def __rb_update_guard_v1():
     except BaseException:
         __rb_os.close(__rb_lock)
         raise RuntimeError('update_in_progress')
+    try:
+        try:
+            __rb_ticket_fd = __rb_os.open(__rb_root / 'maintenance.ticket',
+                __rb_os.O_RDONLY | __rb_os.O_NOFOLLOW)
+        except FileNotFoundError:
+            __rb_ticket_fd = None
+        if __rb_ticket_fd is not None:
+            try:
+                __rb_ticket_info = __rb_os.fstat(__rb_ticket_fd)
+                if (__rb_ticket_info.st_uid != __rb_os.getuid() or
+                        not __rb_stat.S_ISREG(__rb_ticket_info.st_mode) or
+                        __rb_ticket_info.st_mode & 0o077):
+                    raise RuntimeError('invalid_maintenance_ticket')
+                __rb_expected = __rb_os.read(__rb_ticket_fd, 129)
+                __rb_provided = __rb_os.environ.get('RB_UPDATE_LAUNCH_TICKET', '')
+                if (len(__rb_expected) != 65 or __rb_expected[-1:] != b'\\n' or
+                        any(__rb_c not in b'0123456789abcdef' for __rb_c in __rb_expected[:-1]) or
+                        not __rb_secrets.compare_digest(__rb_provided.encode('ascii', 'ignore'),
+                                                        __rb_expected[:-1])):
+                    raise RuntimeError('maintenance_launch_refused')
+            finally:
+                __rb_os.close(__rb_ticket_fd)
+    except BaseException:
+        __rb_os.close(__rb_lock)
+        raise
     # Retain the descriptor until process exit. Worker subprocesses use the
     # same entrypoint and acquire their own shared lifetime lock.
     return __rb_lock
@@ -45,7 +74,7 @@ def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
     if hashlib.sha256(raw).hexdigest() != expected_sha256:
         raise ValueError('unknown_server_baseline')
     source = raw.decode('utf-8')
-    if 'Rap Brain update lifetime guard v1' in source or '__rb_update_guard_v1' in source:
+    if 'Rap Brain update lifetime guard' in source or '__rb_update_guard_v' in source:
         raise ValueError('already_patched')
     tree = ast.parse(source)
     candidates = [n for n in tree.body if isinstance(n, ast.If)
@@ -66,7 +95,7 @@ def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
         raise ValueError('unexpected_entrypoint_format')
     # The only generated change is the guard declaration and the first
     # statement in __main__. No SQL, routes, lyrics or other code is rewritten.
-    lines.insert(main.body[0].lineno - 1, '    __rb_guard_fd = __rb_update_guard_v1()\n')
+    lines.insert(main.body[0].lineno - 1, '    __rb_guard_fd = __rb_update_guard_v2()\n')
     lines.insert(main.lineno - 1, GUARD)
     candidate = ''.join(lines).encode('utf-8')
     compile(candidate, 'server.py', 'exec')

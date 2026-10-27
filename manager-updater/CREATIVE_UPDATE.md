@@ -142,13 +142,19 @@ admission lock. The future lifecycle adapter must stop its verified, idle parent
 and worker first, then take the server lock exclusively; a simultaneous new
 server start loses the lock and aborts before calling `init()` or opening the
 database. It must release that exclusive lock before starting its guarded
-candidate, since the candidate needs a shared lock. A separate durable
-maintenance gate must still reject unrelated launches and new jobs across
-this handoff, through health verification and commit or rollback. The current
-guard by itself cannot provide that handoff, and must not be treated as a
-complete production admission protocol.
-An executable fixture verifies this with two real Python processes, including
-restart after lock release. This is only source preparation on copies: there is
+candidate, since the candidate needs a shared lock. The prepared guard now
+checks a private durable `maintenance.ticket` after acquiring the shared
+lock. The future adapter must create this marker while holding the exclusive
+lock after verified shutdown, pass its ticket only to the owned candidate
+(and its worker), and retain it until commit or rollback is terminal.
+An unrelated launch without the ticket fails even during the restart handoff;
+a crash leaves the marker in place and fails closed until recovery. This is
+an accidental-launch exclusion mechanism, not authentication against code
+running as the same macOS user. New job admission, marker lifecycle, process
+ownership, and audio still require the production adapter.
+Executable fixtures verify the lock conflict and the ticketed restart with
+real Python processes, including refusal without a ticket or with a corrupt
+marker. This is only source preparation on copies: there is
 no patched `server.py` installed on the owner's Mac, no signed bootstrap release,
 and no production lifecycle adapter yet. A first bootstrap must be designed and
 signed separately before this guard can protect subsequent updates.
