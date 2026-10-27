@@ -87,6 +87,15 @@ transaction before any normal server launch. The redacted AST hides literals,
 including SQL and endpoint names, so these requirements are confirmed but the
 precise gate implementation cannot be safely derived from this export alone.
 
+The compact worker contract with the same server SHA-256 confirms that
+`worker_main` selects the first queued job, `resume_jobs()` rewrites a prior
+state on startup, and `job_runner` uses `running`, `done`, and `error`. The HTTP
+API can also set `queued`, `pending`, `retry`, `interrupted`, and `cancelled`.
+`creative_readiness.py` therefore reads only grouped job-status counts and
+rejects every nonterminal or unknown status, before backup and again before
+replacement. This conservative check does not substitute for an actual server
+maintenance gate or verified worker/audio process identity.
+
 ## Next evidence needed
 
 The earlier source review deliberately omitted `server.py` because it might

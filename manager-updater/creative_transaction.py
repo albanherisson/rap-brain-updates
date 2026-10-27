@@ -209,6 +209,7 @@ class Transaction:
             return self.recover_locked()
 
     def install(self, manifest_bytes, archive_bytes):
+        from creative_readiness import assert_no_pending_jobs
         with self.locked():
             recovered = self.recover_locked()
             if recovered:
@@ -229,6 +230,7 @@ class Transaction:
             self.assert_baseline(manifest)
             with self.lifecycle.maintenance(self.source) as lease:
                 lease.assert_stopped()
+                assert_no_pending_jobs(self.source)
                 self.assert_baseline(manifest)
                 original = self.target.read_bytes()
                 mode = self.target.stat().st_mode & 0o777
@@ -244,6 +246,7 @@ class Transaction:
                     self.backup(folder, original)
                     self.record(record, 'backup_ready')
                     lease.assert_stopped()
+                    assert_no_pending_jobs(self.source)
                     self.assert_baseline(manifest)
                     self.record(record, 'switch_pending')
                 except Exception:

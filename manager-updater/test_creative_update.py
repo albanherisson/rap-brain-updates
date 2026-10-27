@@ -61,6 +61,7 @@ class CreativeTests(unittest.TestCase):
         (self.source / 'data' / 'ollama_model.json').write_text('{"model":"fixture"}')
         db = sqlite3.connect(self.source / 'data' / 'rapbrain.sqlite3')
         db.execute('CREATE TABLE analyses (text TEXT)')
+        db.execute('CREATE TABLE jobs (id INTEGER PRIMARY KEY, status TEXT)')
         db.execute('INSERT INTO analyses VALUES (?)', ('must survive',))
         db.commit()
         db.close()
@@ -207,6 +208,26 @@ class CreativeTests(unittest.TestCase):
             self.transaction(FixtureLifecycle(busy=True)).install(self.signed(), self.archive)
         self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
         self.assertFalse((self.root / 'state' / 'transaction.json').exists())
+
+    def test_queued_and_running_jobs_block_install(self):
+        for status in ('queued', 'pending', 'retry', 'interrupted', 'running', 'unexpected'):
+            with self.subTest(status=status):
+                db = sqlite3.connect(self.source / 'data' / 'rapbrain.sqlite3')
+                db.execute('DELETE FROM jobs')
+                db.execute('INSERT INTO jobs (status) VALUES (?)', (status,))
+                db.commit()
+                db.close()
+                with self.assertRaisesRegex(Refused, 'jobs_active_or_unknown'):
+                    self.transaction().install(self.signed(), self.archive)
+                self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
+                self.assertFalse((self.root / 'state' / 'transaction.json').exists())
+
+    def test_known_terminal_jobs_allow_staging(self):
+        db = sqlite3.connect(self.source / 'data' / 'rapbrain.sqlite3')
+        db.executemany('INSERT INTO jobs (status) VALUES (?)', [('done',), ('error',), ('cancelled',)])
+        db.commit()
+        db.close()
+        self.assertEqual(self.transaction().install(self.signed(), self.archive)['state'], 'committed')
 
     def test_backup_failure_prevents_switch(self):
         (self.source / 'data' / 'ollama_model.json').unlink()
