@@ -96,6 +96,15 @@ rejects every nonterminal or unknown status, before backup and again before
 replacement. This conservative check does not substitute for an actual server
 maintenance gate or verified worker/audio process identity.
 
+An executable integration fixture now connects the transaction to the existing
+owned-child supervisor. It starts a real dummy subprocess, stops that retained
+handle, performs the signed transaction on a disposable source/data tree, and
+checks both successful restart and failed-health rollback. The fixture refuses
+any source without an exact disposable marker and fixed child script, and does
+not accept a PID or attach to an existing Rap Brain process. This proves the
+transaction/lifecycle interface works with a real subprocess; it does not prove
+safe shutdown of the actual server and analysis worker.
+
 ## Next evidence needed
 
 The earlier source review deliberately omitted `server.py` because it might

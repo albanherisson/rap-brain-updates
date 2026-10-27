@@ -19,6 +19,8 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from creative_release import (Refused, canonical, digest, verify_manifest, verify_archive,
                               allowed_url, NoRedirect, download_release, CREATIVE_KEY_PIN)
 from creative_transaction import Transaction
+from disposable_update_lifecycle import DisposableLifecycle, MARKER
+from owned_child_supervisor_lab import CHILD
 
 
 class FixtureLifecycle:
@@ -228,6 +230,28 @@ class CreativeTests(unittest.TestCase):
         db.commit()
         db.close()
         self.assertEqual(self.transaction().install(self.signed(), self.archive)['state'], 'committed')
+
+    def test_real_owned_subprocess_transaction_and_rollback(self):
+        # Create the same shape as the owner's code/data tree under a marker
+        # that explicitly forbids use with a real installation.
+        fixture = self.root / 'DisposableProcessFixture'
+        self.source.rename(fixture)
+        self.source = fixture
+        (fixture / 'fixture.marker').write_bytes(MARKER)
+        (fixture / 'owned_child.py').write_text(CHILD)
+        for fail, expected in [(True, 'rolled_back'), (False, 'committed')]:
+            with self.subTest(fail_health=fail):
+                lease = DisposableLifecycle(fixture, self.before, self.after,
+                                            fail_new_health=fail)
+                try:
+                    result = self.transaction(lease).install(self.signed(), self.archive)
+                    self.assertEqual(result['state'], expected)
+                    self.assertIsNone(lease.child.process)
+                    self.assertEqual((fixture / 'creative_engine.py').read_bytes(),
+                                     self.before if fail else self.after)
+                    self.assertEqual(self.data_snapshot(), self.original_data)
+                finally:
+                    lease.child.stop()
 
     def test_backup_failure_prevents_switch(self):
         (self.source / 'data' / 'ollama_model.json').unlink()
