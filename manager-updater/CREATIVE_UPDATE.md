@@ -154,7 +154,9 @@ running as the same macOS user. New job admission, marker lifecycle, process
 ownership, and audio still require the production adapter.
 Executable fixtures verify the lock conflict and the ticketed restart with
 real Python processes, including refusal without a ticket or with a corrupt
-marker. This is only source preparation on copies: there is
+marker. A separate signed transaction fixture exercises the handoff while
+backing up disposable SQLite/config data and replacing the engine on a copy.
+This is only source preparation on copies: there is
 no patched `server.py` installed on the owner's Mac, no signed bootstrap release,
 and no production lifecycle adapter yet. A first bootstrap must be designed and
 signed separately before this guard can protect subsequent updates.

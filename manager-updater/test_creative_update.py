@@ -21,6 +21,7 @@ from creative_release import (Refused, canonical, digest, verify_manifest, verif
 from creative_transaction import Transaction
 from disposable_update_lifecycle import DisposableLifecycle, MARKER
 from owned_child_supervisor_lab import CHILD
+from server_lifetime_guard import prepare as prepare_guarded_server
 
 
 class FixtureLifecycle:
@@ -108,6 +109,84 @@ class CreativeTests(unittest.TestCase):
     def test_signature_and_payload(self):
         result = verify_manifest(self.signed(), pinned_key=self.pin)
         self.assertEqual(verify_archive(self.archive, result), self.after)
+
+    def test_guarded_restart_handoff_during_signed_transaction(self):
+        fixture = b'''import time
+if __name__ == '__main__':
+    print('READY', flush=True)
+    time.sleep(20)
+'''
+        guarded = prepare_guarded_server(fixture, digest(fixture))
+        (self.source / 'server.py').write_bytes(guarded)
+        self.manifest['required_server_sha256'] = digest(guarded)
+        home = self.root / 'test-home'
+        home.mkdir()
+        env = dict(os.environ, HOME=str(home), PYTHONDONTWRITEBYTECODE='1')
+        script = self.source / 'server.py'
+        updated = self.after
+        owner = self
+
+        class TicketedFixture:
+            def __init__(self):
+                self.process = None
+                self.ticket = 'c' * 64
+                self.marker = None
+                self.handoff_checked = False
+                self.start_and_check(initial=True)
+
+            def stop_candidate(self):
+                if self.process is not None:
+                    self.process.terminate()
+                    self.process.communicate(timeout=5)
+                    self.process = None
+
+            def assert_stopped(self):
+                if self.process is not None:
+                    raise Refused('fixture_process_running')
+
+            def start_and_check(self, initial=False):
+                candidate_env = dict(env)
+                if not initial:
+                    candidate_env['RB_UPDATE_LAUNCH_TICKET'] = self.ticket
+                    blocked = subprocess.run([sys.executable, '-B', str(script)], env=env,
+                                             capture_output=True, timeout=5)
+                    self.handoff_checked = blocked.returncode != 0
+                self.process = subprocess.Popen([sys.executable, '-B', str(script)],
+                                                env=candidate_env, stdout=subprocess.PIPE,
+                                                stderr=subprocess.PIPE, text=True)
+                return self.process.stdout.readline().strip() == 'READY'
+
+            @contextmanager
+            def maintenance(self, source):
+                if Path(source) != owner.source:
+                    raise Refused('different_source')
+                self.stop_candidate()
+                lock = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update' / 'update.lock'
+                import fcntl
+                fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.marker = lock.with_name('maintenance.ticket')
+                    with self.marker.open('xb') as stream:
+                        stream.write((self.ticket + '\n').encode())
+                    os.chmod(self.marker, 0o600)
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                    yield self
+                finally:
+                    # Fixture cleanup only; production must retain its marker
+                    # until the durable transaction is terminal.
+                    if self.marker is not None:
+                        self.marker.unlink(missing_ok=True)
+                    os.close(fd)
+
+        lifecycle = TicketedFixture()
+        self.addCleanup(lifecycle.stop_candidate)
+        result = self.transaction(lifecycle).install(self.signed(), self.archive)
+        self.assertEqual(result['state'], 'committed')
+        self.assertTrue(lifecycle.handoff_checked)
+        self.assertIsNotNone(lifecycle.process)
+        self.assertEqual((self.source / 'creative_engine.py').read_bytes(), updated)
+        self.assertEqual(self.data_snapshot(), self.original_data)
 
     def test_test_key_not_trusted_by_production(self):
         self.assertNotEqual(self.pin, CREATIVE_KEY_PIN)
