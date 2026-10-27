@@ -12,9 +12,9 @@ import stat
 import sys
 import urllib.request
 
-COMMIT = 'd8f648f966cff3bbfc6f297e25df7547bf7092e6'
+COMMIT = '8628ffe732ee6809a5cb687699053e1fd6ffadeb'
 PINNED = {
-    'server_lifetime_guard.py': 'aca364a27d7f778635ab3d6982f0f40680d840037eb5d4022d3f0c505d3b0f66',
+    'server_lifetime_guard.py': 'ec30c3b0d2d957c2629696833da48ab68a90388e1f50f9c88240bf9046d3a9e6',
     'beta14_launch_gate.py': 'af77102e3ba9dfa00f9b656d775ab715af9ab49d982219bcd9c95e2daa8c9fa1',
 }
 SERVER = Path.home() / 'Downloads' / 'rap-brain' / 'server.py'
