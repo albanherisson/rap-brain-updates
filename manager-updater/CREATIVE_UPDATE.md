@@ -174,6 +174,16 @@ intentionally non-executable and is not a substitute for compiling and testing
 the unredacted active source on the owner's Mac. Marker lifecycle, process
 ownership, worker termination and audio capture still require the production
 adapter.
+
+`mac_bootstrap_readonly_probe.py` is the next single-action Mac check. It
+reads only the exact active server source and the already extracted Beta 14
+launcher, refuses changed fingerprints, fetches two fixed-commit public patch
+preparers with pinned SHA-256, and compiles both guarded candidates in memory.
+It prints only candidate digests and status. It neither saves a candidate nor
+opens the database, config or private key, starts a process, or installs code.
+Passing it establishes source compatibility, not runtime safety or release
+authorization.
+
 Executable fixtures verify the lock conflict and the ticketed restart with
 real Python processes, including refusal without a ticket or with a corrupt
 marker. A separate signed transaction fixture exercises the handoff while
