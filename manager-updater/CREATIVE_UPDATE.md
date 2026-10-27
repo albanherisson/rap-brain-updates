@@ -181,8 +181,19 @@ launcher, refuses changed fingerprints, fetches two fixed-commit public patch
 preparers with pinned SHA-256, and compiles both guarded candidates in memory.
 It prints only candidate digests and status. It neither saves a candidate nor
 opens the database, config or private key, starts a process, or installs code.
-Passing it establishes source compatibility, not runtime safety or release
-authorization.
+On 27 October 2026 the owner ran this corrected probe on the Mac. It
+recognized both active baselines and compiled the candidates in memory:
+
+- guarded server SHA-256:
+  `637cee464343207a7423917de5fa00e4e3cdf0338f5e6d58d9a7dcafdf4f646c`;
+- guarded Beta 14 launcher SHA-256:
+  `30354aa6838d8dad6348eef9f607d178f582b94e7342f429abf0db4a603b7aa7`.
+
+The probe reported no active files modified, database opened or server started.
+This establishes source compatibility, not runtime safety, installation or
+release authorization. The earlier probe refused
+`unexpected_entrypoint_format` before any candidate was created; its
+AST-equivalent spelling check was corrected and the new run passed.
 
 Executable fixtures verify the lock conflict and the ticketed restart with
 real Python processes, including refusal without a ticket or with a corrupt
@@ -209,9 +220,22 @@ AST rendering to the macOS clipboard. It does not import or execute the server,
 open SQLite, write reports, or modify the installation. The output is structural
 review material and is intentionally not runnable replacement code.
 
-After reviewing that structure: integrate the existing Beta14 launcher/UI with
-the real maintenance/health/recovery mechanism, validate on a disposable copy,
-resolve real Ollama generation, and only then sign an eligible production release
-with the existing Creative Engine publisher key on the owner's Mac.
+Source compatibility is now confirmed on the owner's Mac. The remaining
+evidence is runtime identity and quiescence: the Manager must know whether it
+owns the HTTP process, prove the analysis worker has exited without
+interrupting a job, detect any active or orphaned audio capture, and keep the
+HTTP admission marker through health and rollback. Integrate this with the
+existing Beta 14 launcher/UI, validate it on disposable copies, resolve real
+Ollama generation, and only then sign an eligible production release with the
+existing Creative Engine publisher key on the owner's Mac.
+
+`creative_shutdown_policy.py` now expresses the fail-closed shutdown
+boundary without signaling a process. It requires the exact retained Manager
+process handle, an authenticated parent/worker identity, verified worker and
+audio idle states, a drained HTTP gate and durable marker, only terminal job
+states, and a server process group containing exactly the parent and worker.
+Unknown or extra processes refuse shutdown. These are requirements for a
+future evidence collector; no such authenticated runtime proof has been
+collected on the owner's Mac, and this policy does not enable stopping it.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
