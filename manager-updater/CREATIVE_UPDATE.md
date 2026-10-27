@@ -89,6 +89,18 @@ Linux directory with a nonexistent Rap Brain source and separate test backup
 path. It reported real stopping disabled and production POST operations blocked.
 This does not substitute for macOS or live-server tests.
 
+`beta14_launch_gate.py` now prepares only a separate copy of the exact pinned
+Beta 14 `launch_manager.py`. It inserts a fail-closed read-only check inside
+the existing ordinary-launch request handler. A private maintenance marker,
+pending or malformed journal, or unsafe update-state path produces the normal
+Beta 14 refusal report before `Popen`. A terminal journal permits an ordinary
+launch only after the marker is gone. The patched disposable Beta 14 copy
+passes its bundled smoke test; a direct request through its real handler with
+a maintenance marker returns `update_recovery_required` and `launched: false`.
+This does not alter the Mac app or authorize installation. The server lifetime
+guard must still protect against launches outside this Manager, and the real
+adapter must recover before clearing a marker.
+
 A separately saved `server.py` in the project has SHA-256
 `14c9cc00e6794a4d9709750f93a9d600cb525ad35973b85b88f8ada57a967b51`;
 the archived `rap-brain.zip` server has
