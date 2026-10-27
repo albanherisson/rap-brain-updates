@@ -34,6 +34,17 @@ if __name__ == '__main__':
 
 
 class LifetimeGuardTests(unittest.TestCase):
+    def test_equivalent_entrypoint_spelling_and_indentation(self):
+        variant = HTTP_FIXTURE.replace(
+            b"if __name__ == '__main__':\n    print('READY', flush=True)",
+            b'if(__name__=="__main__"):\n  print(\'READY\', flush=True)')
+        variant = variant.replace(
+            b'class Handler(BaseHTTPRequestHandler):',
+            b'class Handler( BaseHTTPRequestHandler ):')
+        prepared = prepare_admission(variant, hashlib.sha256(variant).hexdigest())
+        self.assertIn(b'  __rb_guard_fd = __rb_update_guard_v2()', prepared)
+        self.assertIn(b'Handler.do_POST = _rb_guarded_do_post_v3', prepared)
+
     def test_maintenance_blocks_all_posts_but_preserves_health_get(self):
         output = prepare_admission(HTTP_FIXTURE, hashlib.sha256(HTTP_FIXTURE).hexdigest())
         namespace = {'__name__': 'fixture'}

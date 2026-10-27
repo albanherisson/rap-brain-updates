@@ -89,14 +89,16 @@ def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
     if len(candidates) != 1 or candidates[0] is not tree.body[-1]:
         raise ValueError('unsupported_entrypoint')
     main = candidates[0]
-    if not main.body or main.body[0].lineno <= main.lineno:
+    if not main.body or main.col_offset != 0 or main.body[0].lineno <= main.lineno:
         raise ValueError('unexpected_entrypoint_body')
     lines = source.splitlines(keepends=True)
-    if not lines[main.lineno - 1].startswith('if __name__ == '):
-        raise ValueError('unexpected_entrypoint_format')
+    first_line = lines[main.body[0].lineno - 1]
+    indent = first_line[:len(first_line) - len(first_line.lstrip(' \t'))]
+    if not indent or len(indent) > 8 or main.body[0].col_offset != len(indent.expandtabs(8)):
+        raise ValueError('unexpected_entrypoint_indentation')
     # The only generated change is the guard declaration and the first
     # statement in __main__. No SQL, routes, lyrics or other code is rewritten.
-    lines.insert(main.body[0].lineno - 1, '    __rb_guard_fd = __rb_update_guard_v2()\n')
+    lines.insert(main.body[0].lineno - 1, indent + '__rb_guard_fd = __rb_update_guard_v2()\n')
     lines.insert(main.lineno - 1, GUARD)
     candidate = ''.join(lines).encode('utf-8')
     compile(candidate, 'server.py', 'exec')
@@ -160,8 +162,9 @@ def prepare_admission(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
         raise ValueError('unsupported_post_flow')
     post = posts[0]
     lines = source.splitlines(keepends=True)
-    if (lines[handler.lineno - 1].strip() != 'class Handler(BaseHTTPRequestHandler):' or
-            lines[post.lineno - 1].strip() != 'def do_POST(self):' or
+    if (handler.col_offset != 0 or len(handler.bases) != 1 or
+            not isinstance(handler.bases[0], ast.Name) or
+            handler.bases[0].id != 'BaseHTTPRequestHandler' or
             post.body[0].lineno <= post.lineno):
         raise ValueError('unsupported_post_format')
     # Wrap each complete HTTP handler, including in-flight GET writes. The
