@@ -71,6 +71,7 @@ def __rb_update_guard_v2():
 
 
 def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
+    """Lifetime lock only, retained for isolated process-lock fixtures."""
     if hashlib.sha256(raw).hexdigest() != expected_sha256:
         raise ValueError('unknown_server_baseline')
     source = raw.decode('utf-8')
@@ -102,6 +103,46 @@ def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
     return candidate
 
 
+POST_GATE = '''# Rap Brain maintenance POST admission gate v1.
+def _rb_update_blocks_posts_v1():
+    import os as __rb_os
+    from pathlib import Path as __rb_Path
+    __rb_state = (__rb_Path.home() / 'Downloads' /
+                  'RapBrainManagerBackups' / 'secure-update')
+    return __rb_os.path.lexists(__rb_state / 'maintenance.ticket')
+
+'''
+
+
+def prepare_admission(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
+    """Prepare a pinned isolated server with lifetime and POST admission gates."""
+    candidate = prepare(raw, expected_sha256)
+    source = candidate.decode('utf-8')
+    tree = ast.parse(source)
+    handlers = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Handler']
+    if len(handlers) != 1:
+        raise ValueError('unsupported_http_handler')
+    handler = handlers[0]
+    posts = [n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == 'do_POST']
+    if len(posts) != 1 or not posts[0].body or not isinstance(posts[0].body[0], ast.Try):
+        raise ValueError('unsupported_post_flow')
+    post = posts[0]
+    lines = source.splitlines(keepends=True)
+    if (lines[handler.lineno - 1].strip() != 'class Handler(BaseHTTPRequestHandler):' or
+            lines[post.lineno - 1].strip() != 'def do_POST(self):' or
+            post.body[0].lineno <= post.lineno):
+        raise ValueError('unsupported_post_format')
+    # Before request-body parsing or route dispatch. The GET health endpoint
+    # remains available, but every POST (including jobs/audio) is rejected.
+    lines.insert(post.body[0].lineno - 1,
+                 "        if _rb_update_blocks_posts_v1():\n"
+                 "            return self.send({'error': 'update_in_progress'}, 503)\n")
+    lines.insert(handler.lineno - 1, POST_GATE)
+    output = ''.join(lines).encode('utf-8')
+    compile(output, 'server.py', 'exec')
+    return output
+
+
 def prepare_copy(source, destination):
     source = Path(source).absolute()
     destination = Path(destination).absolute()
@@ -109,7 +150,7 @@ def prepare_copy(source, destination):
         raise ValueError('unsafe_source_or_destination')
     if destination.is_relative_to(source.parent) or destination.parent.is_symlink():
         raise ValueError('output_must_be_separate')
-    candidate = prepare(source.read_bytes())
+    candidate = prepare_admission(source.read_bytes())
     destination.parent.mkdir(parents=True, exist_ok=True)
     with destination.open('xb') as stream:
         stream.write(candidate)

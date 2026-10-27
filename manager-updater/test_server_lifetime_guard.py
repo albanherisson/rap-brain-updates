@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 
-from server_lifetime_guard import prepare, prepare_copy
+from server_lifetime_guard import prepare, prepare_admission, prepare_copy
 
 FIXTURE = b'''import os
 import time
@@ -16,8 +16,51 @@ if __name__ == '__main__':
     time.sleep(0.6)
 '''
 
+HTTP_FIXTURE = b'''from http.server import BaseHTTPRequestHandler
+class Handler(BaseHTTPRequestHandler):
+    def send(self, data, status=200):
+        return data, status
+    def do_GET(self):
+        return self.send({'healthy': True})
+    def do_POST(self):
+        try:
+            return self.send({'created': True}, 200)
+        except Exception:
+            return self.send({'error': True}, 500)
+if __name__ == '__main__':
+    print('READY', flush=True)
+'''
+
 
 class LifetimeGuardTests(unittest.TestCase):
+    def test_maintenance_blocks_all_posts_but_preserves_health_get(self):
+        output = prepare_admission(HTTP_FIXTURE, hashlib.sha256(HTTP_FIXTURE).hexdigest())
+        namespace = {'__name__': 'fixture'}
+        exec(output, namespace)
+        handler = namespace['Handler'].__new__(namespace['Handler'])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp).resolve()
+            home = root / 'home'
+            home.mkdir()
+            old_home = os.environ.get('HOME')
+            try:
+                os.environ['HOME'] = str(home)
+                self.assertEqual(handler.do_POST()[1], 200)
+                state = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
+                state.mkdir(parents=True, mode=0o700)
+                (state / 'maintenance.ticket').write_text('a' * 64 + '\n')
+                self.assertEqual(handler.do_POST(), ({'error': 'update_in_progress'}, 503))
+                self.assertEqual(handler.do_GET(), ({'healthy': True}, 200))
+            finally:
+                if old_home is None:
+                    os.environ.pop('HOME', None)
+                else:
+                    os.environ['HOME'] = old_home
+
+    def test_post_gate_requires_known_handler_shape(self):
+        with self.assertRaisesRegex(ValueError, 'unsupported_http_handler'):
+            prepare_admission(FIXTURE, hashlib.sha256(FIXTURE).hexdigest())
+
     def test_unknown_source_is_refused(self):
         with self.assertRaisesRegex(ValueError, 'unknown_server_baseline'):
             prepare(FIXTURE)

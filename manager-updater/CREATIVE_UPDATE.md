@@ -162,8 +162,15 @@ lock after verified shutdown, pass its ticket only to the owned candidate
 An unrelated launch without the ticket fails even during the restart handoff;
 a crash leaves the marker in place and fails closed until recovery. This is
 an accidental-launch exclusion mechanism, not authentication against code
-running as the same macOS user. New job admission, marker lifecycle, process
-ownership, and audio still require the production adapter.
+running as the same macOS user. The high-level `prepare_admission()` also
+inserts a POST admission check into the server's existing HTTP handler before
+request parsing. While the marker exists, it returns HTTP 503 for every POST,
+including job creation and audio start; GET health remains available. The
+redacted active-server structure accepts this exact AST insertion, but is
+intentionally non-executable and is not a substitute for compiling and testing
+the unredacted active source on the owner's Mac. Marker lifecycle, process
+ownership, worker termination and audio capture still require the production
+adapter.
 Executable fixtures verify the lock conflict and the ticketed restart with
 real Python processes, including refusal without a ticket or with a corrupt
 marker. A separate signed transaction fixture exercises the handoff while
