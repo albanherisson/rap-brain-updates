@@ -51,6 +51,9 @@ class LifetimeGuardTests(unittest.TestCase):
                 self.assertEqual(handler.do_POST()[1], 200)
                 (state / 'maintenance.ticket').write_text('a' * 64 + '\n')
                 self.assertEqual(handler.do_POST(), ({'error': 'update_in_progress'}, 503))
+                handler.path = '/api/jobs'
+                self.assertEqual(handler.do_GET(), ({'error': 'update_in_progress'}, 503))
+                handler.path = '/api/status'
                 self.assertEqual(handler.do_GET(), ({'healthy': True}, 200))
             finally:
                 if old_home is None:

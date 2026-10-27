@@ -103,9 +103,10 @@ def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
     return candidate
 
 
-POST_GATE = '''# Rap Brain maintenance POST admission gate v2.
+POST_GATE = '''# Rap Brain maintenance HTTP admission gate v3.
 _rb_original_do_post_v2 = Handler.do_POST
-def _rb_guarded_do_post_v2(self):
+_rb_original_do_get_v3 = Handler.do_GET
+def _rb_guarded_http_v3(self, original, method):
     import fcntl as __rb_fcntl
     import os as __rb_os
     import stat as __rb_stat
@@ -125,12 +126,20 @@ def _rb_guarded_do_post_v2(self):
         except BlockingIOError:
             return self.send({'error': 'update_in_progress'}, 503)
         if __rb_os.path.lexists(__rb_state / 'maintenance.ticket'):
-            return self.send({'error': 'update_in_progress'}, 503)
-        return _rb_original_do_post_v2(self)
+            if method != 'GET' or self.path.split('?', 1)[0] != '/api/status':
+                return self.send({'error': 'update_in_progress'}, 503)
+        return original(self)
     finally:
         __rb_os.close(__rb_fd)
 
-Handler.do_POST = _rb_guarded_do_post_v2
+def _rb_guarded_do_post_v3(self):
+    return _rb_guarded_http_v3(self, _rb_original_do_post_v2, 'POST')
+
+def _rb_guarded_do_get_v3(self):
+    return _rb_guarded_http_v3(self, _rb_original_do_get_v3, 'GET')
+
+Handler.do_POST = _rb_guarded_do_post_v3
+Handler.do_GET = _rb_guarded_do_get_v3
 
 '''
 
@@ -145,7 +154,9 @@ def prepare_admission(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
         raise ValueError('unsupported_http_handler')
     handler = handlers[0]
     posts = [n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == 'do_POST']
-    if len(posts) != 1 or not posts[0].body or not isinstance(posts[0].body[0], ast.Try):
+    gets = [n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == 'do_GET']
+    if (len(posts) != 1 or len(gets) != 1 or not posts[0].body or
+            not isinstance(posts[0].body[0], ast.Try)):
         raise ValueError('unsupported_post_flow')
     post = posts[0]
     lines = source.splitlines(keepends=True)
@@ -153,10 +164,10 @@ def prepare_admission(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
             lines[post.lineno - 1].strip() != 'def do_POST(self):' or
             post.body[0].lineno <= post.lineno):
         raise ValueError('unsupported_post_format')
-    # Wrap the entire original handler, including in-flight writes. The
+    # Wrap each complete HTTP handler, including in-flight GET writes. The
     # updater will take admission.lock exclusively, create the marker, then
     # release the short admission lock before stopping the idle parent.
-    # GET health is not wrapped; every POST (including jobs/audio) is.
+    # Only GET /api/status may run during maintenance; every POST is blocked.
     lines.insert(handler.end_lineno, POST_GATE)
     output = ''.join(lines).encode('utf-8')
     compile(output, 'server.py', 'exec')
