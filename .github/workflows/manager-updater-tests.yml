@@ -9,6 +9,9 @@ on:
       - "manager-updater/**"
       - ".github/workflows/manager-updater-tests.yml"
   workflow_dispatch:
+concurrency:
+  group: manager-safety-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
