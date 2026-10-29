@@ -5,6 +5,7 @@ unguarded server cannot be safely attached to or stopped by PID. Local app
 re-signing is allowed only after a full verified app backup exists.
 """
 import os
+from pathlib import Path
 import subprocess
 import sys
 
@@ -44,6 +45,18 @@ def resign_verified_app(app, backup_folder, source, launcher, *,
     read_app_backup(backup_folder)
     if app.stat().st_uid != os.getuid():
         raise Refused('app_owner_changed')
+    # A detached signature can live in extended attributes on a script
+    # executable. Prove the *backup* is launchable before touching the live
+    # app's signature or any of its resources.
+    backup_app = safe_path(Path(backup_folder) / 'app-original.app', directory=True)
+    try:
+        backup_check = subprocess.run(
+            ['/usr/bin/codesign', '--verify', '--deep', '--strict', str(backup_app)],
+            capture_output=True, stdin=subprocess.DEVNULL, timeout=90)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refused('app_backup_signature_tool_unavailable') from exc
+    if backup_check.returncode != 0:
+        raise Refused('app_backup_signature_invalid')
     for args in (('/usr/bin/codesign', '--force', '--deep', '--sign', '-', str(app)),
                  ('/usr/bin/codesign', '--verify', '--deep', '--strict', str(app))):
         try:

@@ -52,6 +52,9 @@ class MacAppSignatureIntegrationTests(unittest.TestCase):
                             'DetachedHelper')
             subprocess.run(['/usr/bin/codesign', '--verify', '--strict',
                             str(saved_helper)], check=True, capture_output=True)
+            subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                            str(folder / 'app-original.app')],
+                           check=True, capture_output=True)
             offline = lambda *_: {'server_process_seen': False,
                                   'manager_process_seen': False,
                                   'port_8765_listening': False}
