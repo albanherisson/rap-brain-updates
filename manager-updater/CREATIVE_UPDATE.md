@@ -498,4 +498,14 @@ not make installation available. A first signed guarded-server/bootstrap
 installation, recovery of a still-running orphaned attempt, actual Mac process
 lifecycle validation, real Ollama validation and a production release remain.
 
+The first guarded bootstrap has a separate verification gate in
+`bootstrap_release.py`. It pins the existing Manager publisher public key,
+requires a production Ed25519 manifest explicitly attesting an isolated
+rollback and a real macOS runtime check, accepts exactly the transformed
+`server.py` and `launch_manager.py`, and compares both to the deterministic
+preparers. It never writes either file. The private signing key remains on
+the owner's Mac, and no such production manifest exists yet. The two-file
+offline transaction and its crash recovery must be implemented and validated
+before a bootstrap can be offered as one click.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
