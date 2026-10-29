@@ -290,6 +290,21 @@ if __name__ == '__main__':
         self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
         self.assertFalse((self.root / 'state' / 'transaction.json').exists())
 
+    def test_durable_lifecycle_attempt_id_binds_transaction_journal(self):
+        lease = FixtureLifecycle()
+        lease.transaction_id = 'd' * 32
+        result = self.transaction(lease).install(self.signed(), self.archive)
+        self.assertEqual(result['backup_id'], lease.transaction_id)
+        journal = json.loads((self.root / 'state' / 'transaction.json').read_text())
+        self.assertEqual(journal['id'], lease.transaction_id)
+
+    def test_invalid_lifecycle_attempt_id_refuses_before_backup(self):
+        lease = FixtureLifecycle()
+        lease.transaction_id = '../unsafe'
+        with self.assertRaisesRegex(Refused, 'invalid_lifecycle_transaction_id'):
+            self.transaction(lease).install(self.signed(), self.archive)
+        self.assertFalse((self.root / 'state' / 'transaction.json').exists())
+
     def test_queued_and_running_jobs_block_install(self):
         for status in ('queued', 'pending', 'retry', 'interrupted', 'running', 'unexpected'):
             with self.subTest(status=status):

@@ -8,6 +8,7 @@ import unittest
 
 from creative_release import Refused
 from prejournal_intent import begin_attempt, recover_unjournaled
+from worker_activity_gate import finish_maintenance
 
 
 TICKET = b'a' * 64 + b'\n'
@@ -90,6 +91,20 @@ class PrejournalTests(unittest.TestCase):
         with self.assertRaises(Refused):
             recover_unjournaled(self.state, self.source, TICKET, ID)
         self.assertTrue((self.state / 'maintenance.ticket').exists())
+
+    def test_terminal_attempt_clears_marker_and_matching_intent_together(self):
+        begin_attempt(self.state, self.source, TICKET, ID)
+        journal = self.state / 'transaction.json'
+        journal.write_text(json.dumps({'id': ID, 'source': str(self.source),
+                                       'phase': 'committed'}))
+        journal.chmod(0o600)
+        with self.assertRaisesRegex(Refused, 'transaction_not_terminal'):
+            finish_maintenance(self.state, TICKET, expected_transaction_id='c' * 32,
+                               owned_health_verified=True, require_intent=True)
+        finish_maintenance(self.state, TICKET, expected_transaction_id=ID,
+                           owned_health_verified=True, require_intent=True)
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertFalse((self.state / 'maintenance-intent.json').exists())
 
 
 if __name__ == '__main__':

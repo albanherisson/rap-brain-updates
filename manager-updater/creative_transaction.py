@@ -239,7 +239,12 @@ class Transaction:
                 self.assert_baseline(manifest)
                 original = self.target.read_bytes()
                 mode = self.target.stat().st_mode & 0o777
-                identifier = uuid.uuid4().hex
+                identifier = getattr(lease, 'transaction_id', None)
+                if identifier is None:
+                    identifier = uuid.uuid4().hex
+                elif (type(identifier) is not str or len(identifier) != 32 or
+                      any(c not in '0123456789abcdef' for c in identifier)):
+                    raise Refused('invalid_lifecycle_transaction_id')
                 folder = self.state / identifier
                 folder.mkdir(mode=0o700)
                 fsync_dir(self.state)

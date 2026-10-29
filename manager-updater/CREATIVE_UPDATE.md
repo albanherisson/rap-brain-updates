@@ -353,5 +353,12 @@ A killed-updater process drill recovers the unmodified fixture; altered code,
 an advanced journal, or a running server leave the marker in place. The real
 Beta 14 transaction has not yet been wired to this attempt record; until it
 is, the pre-journal production blocker remains open.
+The transaction can now accept the same validated 32-character ID from its
+lifecycle lease instead of generating a second one. The explicit finalizer can
+require a matching intent, terminal journal and ticket before removing both
+the marker and intent under the HTTP and worker locks. Disposable tests cover
+the matching handoff and a mismatched transaction. A production adapter still
+has to provide the lease, authenticated health and process stop/restart; no
+live installation is enabled.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

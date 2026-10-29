@@ -6,6 +6,7 @@ holding its shared lock, so no job can slip between the idle check and marker.
 The caller must retain the marker until commit or rollback is terminal.
 """
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -97,7 +98,7 @@ def begin_maintenance(directory, ticket):
 
 
 def finish_maintenance(directory, ticket, *, expected_transaction_id,
-                       owned_health_verified):
+                       owned_health_verified, require_intent=False):
     """Release a marker only after a durable terminal journal and owned health."""
     directory = _state(directory)
     if owned_health_verified is not True:
@@ -146,7 +147,30 @@ def finish_maintenance(directory, ticket, *, expected_transaction_id,
                     record.get('id') != expected_transaction_id or
                     record.get('phase') not in ('committed', 'rolled_back', 'aborted')):
                 raise Refused('transaction_not_terminal')
+            intent_path = directory / 'maintenance-intent.json'
+            if require_intent:
+                intent_fd = os.open(intent_path, os.O_RDONLY | os.O_NOFOLLOW)
+                try:
+                    intent_info = os.fstat(intent_fd)
+                    if (not stat.S_ISREG(intent_info.st_mode) or
+                            intent_info.st_uid != os.getuid() or
+                            intent_info.st_mode & 0o077 or intent_info.st_size > 4096):
+                        raise Refused('unsafe_maintenance_intent')
+                    intent_raw = os.read(intent_fd, 4097)
+                finally:
+                    os.close(intent_fd)
+                try:
+                    intent = json.loads(intent_raw, object_pairs_hook=unique)
+                except (ValueError, UnicodeError) as exc:
+                    raise Refused('invalid_maintenance_intent') from exc
+                if (type(intent) is not dict or
+                        intent.get('id') != expected_transaction_id or
+                        intent.get('source') != record.get('source') or
+                        intent.get('ticket_sha256') != hashlib.sha256(ticket).hexdigest()):
+                    raise Refused('maintenance_intent_mismatch')
             os.unlink(marker_path)
+            if require_intent:
+                os.unlink(intent_path)
             directory_fd = os.open(directory, os.O_RDONLY)
             try:
                 os.fsync(directory_fd)
