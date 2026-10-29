@@ -13,7 +13,10 @@ from mac_offline_bootstrap_gate import resign_verified_app, verify_restored_app
 @unittest.skipUnless(sys.platform == 'darwin', 'requires macOS codesign')
 class MacAppSignatureIntegrationTests(unittest.TestCase):
     def test_sign_changed_bundle_then_restore_exact_signed_original(self):
-        with tempfile.TemporaryDirectory() as temp:
+        # macOS /var is a symlink to /private/var; the production path guard
+        # intentionally refuses symlinked ancestors. Keep the fixture in the
+        # runner checkout just like the other transaction fixtures.
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp:
             root = Path(temp)
             source = root / 'rap-brain'
             source.mkdir()
