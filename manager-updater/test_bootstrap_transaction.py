@@ -167,6 +167,31 @@ class BootstrapTransactionTests(unittest.TestCase):
         self.assertEqual(self.saved, {p.name: p.read_bytes()
                                       for p in (self.source / 'data').iterdir()})
 
+    def test_interruption_between_server_and_launcher_restores_original_pair(self):
+        self.install([True])
+        (self.state / 'bootstrap-intent.json').write_text(json.dumps({
+            'id': IDENTIFIER, 'source': str(self.source),
+            'launcher': str(self.launcher),
+            'ticket_sha256': hashlib.sha256(OfflineFixture.ticket).hexdigest()}))
+        (self.state / 'bootstrap-intent.json').chmod(0o600)
+        (self.state / 'maintenance.ticket').write_bytes(OfflineFixture.ticket)
+        (self.state / 'maintenance.ticket').chmod(0o600)
+        self.launcher.write_bytes(self.before['launch_manager.py'])
+        journal = self.state / 'bootstrap-transaction.json'
+        record = json.loads(journal.read_text())
+        record['phase'] = 'server_switched'
+        journal.write_text(json.dumps(record))
+        journal.chmod(0o600)
+        with (patch('bootstrap_release.prepare_server', return_value=self.after['server.py']),
+              patch('bootstrap_release.prepare_launcher',
+                    return_value=self.after['launch_manager.py'])):
+            result = self.transaction([True]).recover()
+        self.assertEqual(result['state'], 'rolled_back')
+        self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
+        self.assertEqual(self.launcher.read_bytes(), self.before['launch_manager.py'])
+        self.assertEqual(self.saved, {p.name: p.read_bytes()
+                                      for p in (self.source / 'data').iterdir()})
+
     def test_backup_failure_before_swap_restarts_originals(self):
         with (patch('bootstrap_release.prepare_server', return_value=self.after['server.py']),
               patch('bootstrap_release.prepare_launcher',
