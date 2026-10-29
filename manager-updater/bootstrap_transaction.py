@@ -16,7 +16,7 @@ import stat
 
 from bootstrap_release import PUBLISHER_PIN, verify_bootstrap
 from creative_release import Refused, digest
-from creative_transaction import Transaction, atomic_write, fsync_dir, read_json, safe_path
+from creative_transaction import Transaction, atomic_write, fsync_dir, safe_path
 from strict_json import parse_signed_json
 
 
@@ -61,6 +61,26 @@ class BootstrapTransaction:
     def record(self, record, phase):
         record['phase'] = phase
         atomic_write(self.journal, json.dumps(record, sort_keys=True).encode())
+
+    def _read_journal(self):
+        path = safe_path(self.journal)
+        info = path.stat()
+        if (info.st_uid != os.getuid() or info.st_mode & 0o077 or
+                not 0 < info.st_size <= 8192):
+            raise Refused('bootstrap_journal_unsafe')
+        def unique(pairs):
+            value = {}
+            for key, item in pairs:
+                if key in value:
+                    raise Refused('bootstrap_journal_duplicate_field')
+                value[key] = item
+            return value
+        try:
+            return json.loads(path.read_bytes(), object_pairs_hook=unique)
+        except Refused:
+            raise
+        except (ValueError, UnicodeError) as exc:
+            raise Refused('bootstrap_journal_invalid') from exc
 
     def _assert_excluded(self, lease):
         lease.assert_stopped()
@@ -147,22 +167,25 @@ class BootstrapTransaction:
     def recover_locked(self):
         if not self.journal.exists():
             return None
-        record = read_json(self.journal)
-        if (type(record) is not dict or record.get('source') != str(self.source) or
+        record = self._read_journal()
+        if (type(record) is not dict or record.keys() !=
+                {'id', 'source', 'launcher', 'modes', 'sequence', 'phase'} or
+                record.get('source') != str(self.source) or
                 record.get('launcher') != str(self.launcher)):
             raise Refused('bootstrap_journal_identity_changed')
-        if record.get('phase') in TERMINAL:
-            return None
         if (record.get('phase') not in
                 ('preparing', 'backup_ready', 'server_pending', 'server_switched',
-                 'launcher_pending', 'both_switched', 'rollback_pending') or
+                 'launcher_pending', 'both_switched', 'rollback_pending', *TERMINAL) or
                 type(record.get('id')) is not str or len(record['id']) != 32 or
                 any(c not in '0123456789abcdef' for c in record['id']) or
+                type(record.get('sequence')) is not int or record['sequence'] != 1 or
                 type(record.get('modes')) is not dict or
                 record['modes'].keys() != {'server.py', 'launch_manager.py'} or
                 any(type(mode) is not int or not 0 <= mode <= 0o777
                     for mode in record['modes'].values())):
             raise Refused('bootstrap_journal_invalid')
+        if record['phase'] in TERMINAL:
+            return None
         resume = getattr(self.lifecycle, 'resume_maintenance', None)
         if not callable(resume):
             raise Refused('bootstrap_original_attempt_required')

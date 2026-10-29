@@ -532,5 +532,9 @@ attempt can resume only with its original identifier. A backup failure before
 either swap restarts the originals. This has no production offline lifecycle,
 no enabled UI request and no signed production release; an incomplete stage
 that cannot be authenticated remains blocked for manual recovery.
+The bootstrap fixture now passes a genuinely signed two-file manifest through
+the same verification path before the copy transaction. A changed signature
+refuses before creating maintenance, and duplicate or malformed terminal
+journal fields fail closed. No publisher private key is present in the test.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

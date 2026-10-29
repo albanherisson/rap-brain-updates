@@ -1,12 +1,19 @@
 """Signed bootstrap transaction mechanics on disposable files only."""
 from contextlib import contextmanager
+import base64
 import hashlib
+import io
 import json
 from pathlib import Path
 import sqlite3
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
+import zipfile
+
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from bootstrap_transaction import BootstrapTransaction
 from creative_release import Refused, digest
@@ -85,22 +92,40 @@ class BootstrapTransactionTests(unittest.TestCase):
         self.saved = {p.name: p.read_bytes() for p in data.iterdir()}
         self.state = root / 'state'
         self.state.mkdir(mode=0o700)
-        self.manifest = {'sequence': 1,
+        self.key = Ed25519PrivateKey.generate()
+        self.pub = self.key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+        self.pin = digest(self.pub)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w') as archive:
+            archive.writestr('server.py', self.after['server.py'])
+            archive.writestr('launch_manager.py', self.after['launch_manager.py'])
+        self.archive = buffer.getvalue()
+        now = int(time.time())
+        self.manifest = {'schema': 'rapbrain-guarded-bootstrap-v1',
+            'sequence': 1, 'issued_at': now - 1, 'expires_at': now + 3600,
+            'production_install_authorized': True, 'data_migrations': [],
+            'validation': {'isolated_rollback': 'passed', 'macos_runtime': 'passed'},
             'baseline_server_sha256': digest(self.before['server.py']),
             'baseline_launcher_sha256': digest(self.before['launch_manager.py']),
             'candidate_server_sha256': digest(self.after['server.py']),
-            'candidate_launcher_sha256': digest(self.after['launch_manager.py'])}
+            'candidate_launcher_sha256': digest(self.after['launch_manager.py']),
+            'archive_sha256': digest(self.archive), 'archive_bytes': len(self.archive)}
+        from creative_release import canonical
+        self.signed = canonical({'signed_payload': self.manifest,
+            'signature_algorithm': 'Ed25519',
+            'signature_base64': base64.b64encode(
+                self.key.sign(canonical(self.manifest))).decode(),
+            'public_key_base64': base64.b64encode(self.pub).decode()})
 
     def transaction(self, health):
         return BootstrapTransaction(self.source, self.launcher, self.state,
-                                    OfflineFixture(self.state, health))
+                                    OfflineFixture(self.state, health), pinned_key=self.pin)
 
     def install(self, health):
-        with (patch('bootstrap_transaction.verify_bootstrap',
-                    return_value=(self.manifest, self.after)),
-              patch('bootstrap_transaction.parse_signed_json',
-                    return_value={'signed_payload': {'issued_at': 1}})):
-            result = self.transaction(health).install(b'fixture signed', b'fixture zip')
+        with (patch('bootstrap_release.prepare_server', return_value=self.after['server.py']),
+              patch('bootstrap_release.prepare_launcher',
+                    return_value=self.after['launch_manager.py'])):
+            result = self.transaction(health).install(self.signed, self.archive)
         self.assertEqual(self.saved, {p.name: p.read_bytes()
                                       for p in (self.source / 'data').iterdir()})
         self.assertFalse((self.state / 'bootstrap-intent.json').exists())
@@ -132,10 +157,9 @@ class BootstrapTransactionTests(unittest.TestCase):
         record['phase'] = 'both_switched'
         journal.write_text(json.dumps(record))
         journal.chmod(0o600)
-        with (patch('bootstrap_transaction.verify_bootstrap',
-                    return_value=(self.manifest, self.after)),
-              patch('bootstrap_transaction.parse_signed_json',
-                    return_value={'signed_payload': {'issued_at': 1}})):
+        with (patch('bootstrap_release.prepare_server', return_value=self.after['server.py']),
+              patch('bootstrap_release.prepare_launcher',
+                    return_value=self.after['launch_manager.py'])):
             result = self.transaction([True]).recover()
         self.assertEqual(result['state'], 'rolled_back')
         self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
@@ -144,17 +168,35 @@ class BootstrapTransactionTests(unittest.TestCase):
                                       for p in (self.source / 'data').iterdir()})
 
     def test_backup_failure_before_swap_restarts_originals(self):
-        with (patch('bootstrap_transaction.verify_bootstrap',
-                    return_value=(self.manifest, self.after)),
+        with (patch('bootstrap_release.prepare_server', return_value=self.after['server.py']),
+              patch('bootstrap_release.prepare_launcher',
+                    return_value=self.after['launch_manager.py']),
               patch('bootstrap_transaction.Transaction.backup',
                     side_effect=Refused('backup_failed'))):
             with self.assertRaisesRegex(Refused, 'backup_failed'):
-                self.transaction([True]).install(b'fixture signed', b'fixture zip')
+                self.transaction([True]).install(self.signed, self.archive)
         self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
         self.assertEqual(self.launcher.read_bytes(), self.before['launch_manager.py'])
         self.assertEqual(json.loads((self.state / 'bootstrap-transaction.json').read_text())['phase'],
                          'aborted')
         self.assertFalse((self.state / 'maintenance.ticket').exists())
+
+    def test_bad_signature_refuses_before_offline_maintenance(self):
+        changed = self.signed.replace(b'"sequence":1', b'"sequence":2')
+        with self.assertRaises(ValueError):
+            self.transaction([True]).install(changed, self.archive)
+        self.assertFalse((self.state / 'bootstrap-intent.json').exists())
+        self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
+        self.assertEqual(self.launcher.read_bytes(), self.before['launch_manager.py'])
+
+    def test_duplicate_terminal_journal_cannot_authorize_another_attempt(self):
+        self.install([True])
+        journal = self.state / 'bootstrap-transaction.json'
+        raw = journal.read_text()
+        journal.write_text(raw[:-1] + ',"phase":"committed"}')
+        with self.assertRaisesRegex(Refused, 'bootstrap_journal_duplicate_field'):
+            self.transaction([True]).recover()
+        self.assertEqual((self.source / 'server.py').read_bytes(), self.after['server.py'])
 
 
 if __name__ == '__main__':
