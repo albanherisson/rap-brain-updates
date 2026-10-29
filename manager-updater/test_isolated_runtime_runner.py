@@ -19,6 +19,8 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
 if __name__ == '__main__':
+    from pathlib import Path
+    Path(os.environ['HOME'], 'fixture-started').write_text(str(PORT))
     HTTPServer(('127.0.0.1', PORT), Handler).serve_forever()
 '''
 
@@ -31,8 +33,13 @@ class RunnerTests(unittest.TestCase):
             source = home / 'Downloads' / 'rap-brain'
             source.mkdir(parents=True)
             (source / 'server.py').write_bytes(FIXTURE)
-            report = run_disposable(source, home, digest(FIXTURE), timeout=20,
-                                    listener_check=lambda port, pid: True)
+            try:
+                report = run_disposable(source, home, digest(FIXTURE), timeout=8,
+                                        listener_check=lambda port, pid: True)
+            except Refused as exc:
+                marker = home / 'fixture-started'
+                self.fail(f'{exc}; child_started={marker.exists()}; '
+                          f'port={marker.read_text() if marker.exists() else "missing"}')
             self.assertTrue(report['status_ok'])
             self.assertNotEqual(report['port'], 8765)
             with self.assertRaises(ProcessLookupError):
