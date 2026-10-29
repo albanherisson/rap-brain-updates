@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 
 from creative_release import Refused, digest
@@ -23,7 +24,9 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     from pathlib import Path
     Path(os.environ['HOME'], 'fixture-started').write_text(str(PORT))
-    HTTPServer(('127.0.0.1', PORT), Handler).serve_forever()
+    server = HTTPServer(('127.0.0.1', PORT), Handler)
+    Path(os.environ['HOME'], 'fixture-bound').write_text(str(server.server_address))
+    server.serve_forever()
 '''
 
 
@@ -36,13 +39,17 @@ class RunnerTests(unittest.TestCase):
             source.mkdir(parents=True)
             (source / 'server.py').write_bytes(FIXTURE)
             try:
+                options = ({} if sys.platform == 'darwin' else
+                           {'listener_check': lambda port, pid: True})
                 report = run_disposable(source, home, digest(FIXTURE), timeout=8,
-                                        listener_check=lambda port, pid: True)
+                                        **options)
             except Refused as exc:
                 marker = home / 'fixture-started'
                 requested = home / 'fixture-request'
+                bound = home / 'fixture-bound'
                 self.fail(f'{exc}; child_started={marker.exists()}; '
                           f'port={marker.read_text() if marker.exists() else "missing"}; '
+                          f'bound={bound.read_text() if bound.exists() else "missing"}; '
                           f'request={requested.read_text() if requested.exists() else "missing"}')
             self.assertTrue(report['status_ok'])
             self.assertNotEqual(report['port'], 8765)
