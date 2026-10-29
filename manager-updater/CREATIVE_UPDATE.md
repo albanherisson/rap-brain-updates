@@ -418,4 +418,12 @@ fixture bytes remain identical. The execution environment cannot run its own
 `ps -p` inventory, so that test substitutes the independently tested OS
 collectors; it does not claim the actual Mac process inventory passed.
 
+`mac_shutdown_readonly_probe.py` prepares one later owner-side compatibility
+check for the final graceful-stop server candidate. It pins the existing three
+public preparer sources to a fixed commit, reads only the previously recognized
+original `server.py`, checks for the local read-only listener inventory tool,
+and compiles the candidate entirely in memory. It never opens the database or
+executes/stops the server. Until the owner runs it, the new endpoint has only
+synthetic source compatibility evidence.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
