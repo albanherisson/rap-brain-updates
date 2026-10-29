@@ -283,6 +283,35 @@ class FullTransactionTests(unittest.TestCase):
         downloader.assert_called_once()
         self.assert_data_preserved()
 
+    def test_external_installer_resumes_saved_attempt_without_network(self):
+        a, b, c = self.prepared()
+        with a, b, c:
+            self.assertEqual(self.transaction([True]).install(
+                self.signed, self.archive)['state'], 'committed')
+        self.launcher.write_bytes(self.before['launch_manager.py'])
+        journal = self.state / 'bootstrap-transaction.json'
+        record = json.loads(journal.read_text())
+        record['phase'] = 'switch_pending'
+        journal.write_text(json.dumps(record))
+        journal.chmod(0o600)
+        downloader = Mock()
+        inspector = lambda *_: {'server_process_seen': False,
+                                'manager_process_seen': False,
+                                'port_8765_listening': False}
+        factory = lambda source, launcher, state, manifest, **kwargs: (
+            OfflineFixture(state, [True]))
+        a, b, c = self.prepared()
+        with a, b, c:
+            result = install_from_channel(self.source, self.launcher, self.state,
+                inspector=inspector, downloader=downloader,
+                lifecycle_factory=factory, pinned_key=self.pin)
+        self.assertEqual(result['state'], 'rolled_back')
+        downloader.assert_not_called()
+        self.assertEqual((self.source / 'server.py').read_bytes(),
+                         self.before['server.py'])
+        self.assertEqual(self.launcher.read_bytes(), self.before['launch_manager.py'])
+        self.assert_data_preserved()
+
 
 if __name__ == '__main__':
     unittest.main()

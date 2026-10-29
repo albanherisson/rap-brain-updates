@@ -624,5 +624,10 @@ manifest or archive has been published and it must not be run on the Mac yet.
 Disposable tests cover the orchestration, signature-before-download order and
 rollback. Actual owner-Mac runtime validation and signing with the existing
 local Manager publisher key are still prerequisites.
+On a repeat launch with a nonterminal journal, the entrypoint first verifies
+the saved signed manifest against its saved original files and resumes the
+same attempt without accessing the GitHub channel. A crash before the saved
+manifest is complete still fails closed and needs a separate recovery path;
+it must not be treated as an ordinary new installation.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
