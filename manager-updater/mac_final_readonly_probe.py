@@ -15,7 +15,7 @@ import types
 import urllib.request
 
 
-COMMIT = '36965d420a994b72bdd8d1b68c60b09409d4a0db'
+COMMIT = '1055d5301cfe62b0b28e842507ebdbf30c12b4b5'
 PINS = {
     'server_lifetime_guard.py': 'ec30c3b0d2d957c2629696833da48ab68a90388e1f50f9c88240bf9046d3a9e6',
     'server_worker_resume_candidate.py': 'c498d630018898f9e1fe8984255acb1c7ccaadd223a9cdc118f530c3bb55fdad',
@@ -23,7 +23,7 @@ PINS = {
     'beta14_launch_gate.py': 'af77102e3ba9dfa00f9b656d775ab715af9ab49d982219bcd9c95e2daa8c9fa1',
     'beta14_runtime_token_candidate.py': '659d8bbf2b6e20432b696a6a6ec70dff63cd03b39af9eaac98f02905d4857a4e',
     'beta14_owned_identity_candidate.py': 'c66c6bfd6b720195ead6d102ce4e480b560fabfcb536fe5a867fc6c6d69fc31c',
-    'recovery_start_guards.py': 'cfc3b573ae8b21a17f150aa7588549a9df6902601fe6d3e5dbb504e017a33086',
+    'recovery_start_guards.py': '7ee0b66cb9aab9efa7e6b71a2080fe953a9fed9fb69217ebb0107be37928eaa8',
     'beta14_one_click_candidate.py': '50d99b296f3a8b30d21da5683ce9f916938033ed26dd82aafa67f5d66a66be42',
 }
 HOME = Path.home()
@@ -71,9 +71,18 @@ def prepare_all(server, launcher, dashboard, modules):
         for name in PINS:
             module = types.ModuleType(name[:-3])
             sys.modules[name[:-3]] = module
-            exec(compile(modules[name], name, 'exec'), module.__dict__)
-        guarded = sys.modules['recovery_start_guards'].prepare_server(server)
-        app = sys.modules['beta14_one_click_candidate'].prepare_launcher(launcher)
+            try:
+                exec(compile(modules[name], name, 'exec'), module.__dict__)
+            except SyntaxError as exc:
+                raise ValueError('public_preparer_syntax_' + name) from exc
+        try:
+            guarded = sys.modules['recovery_start_guards'].prepare_server(server)
+        except SyntaxError as exc:
+            raise ValueError('server_candidate_syntax') from exc
+        try:
+            app = sys.modules['beta14_one_click_candidate'].prepare_launcher(launcher)
+        except SyntaxError as exc:
+            raise ValueError('launcher_candidate_syntax') from exc
         page = sys.modules['beta14_one_click_candidate'].prepare_dashboard(dashboard)
         return sha(guarded), sha(app), sha(page)
     finally:
