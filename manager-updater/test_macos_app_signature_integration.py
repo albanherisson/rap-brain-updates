@@ -1,7 +1,6 @@
 """Exercise the actual macOS codesign and exact app rollback on a copy."""
 import plistlib
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,7 +22,9 @@ class MacAppSignatureIntegrationTests(unittest.TestCase):
             executable = app / 'Contents' / 'MacOS' / 'DisposableRapBrain'
             resources.mkdir(parents=True)
             executable.parent.mkdir()
-            shutil.copy2('/bin/echo', executable)
+            # System binaries can carry restricted macOS flags that an
+            # unprivileged CI runner cannot copy into a temporary bundle.
+            executable.write_bytes(Path('/bin/echo').read_bytes())
             executable.chmod(0o755)
             (app / 'Contents' / 'Info.plist').write_bytes(plistlib.dumps({
                 'CFBundleIdentifier': 'org.rapbrain.disposable-codesign-test',

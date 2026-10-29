@@ -76,6 +76,13 @@ def codesign(app, *, replace=False):
                    stdin=subprocess.DEVNULL)
 
 
+def copy_file_without_system_flags(source, target):
+    """Preserve file bytes/mode, without macOS restricted flags or xattrs."""
+    shutil.copyfile(source, target)
+    Path(target).chmod(stat.S_IMODE(Path(source).stat().st_mode))
+    return target
+
+
 def run():
     if sys.platform != 'darwin':
         raise ValueError('macos_required')
@@ -113,11 +120,13 @@ def run():
         folder = Path(temp)
         app = folder / 'candidate.app'
         backup = folder / 'backup.app'
-        shutil.copytree(source_app, app, symlinks=True)
+        shutil.copytree(source_app, app, symlinks=True,
+                        copy_function=copy_file_without_system_flags)
         if inventory(app) != original:
             raise ValueError('app_copy_changed')
         codesign(app)
-        shutil.copytree(app, backup, symlinks=True)
+        shutil.copytree(app, backup, symlinks=True,
+                        copy_function=copy_file_without_system_flags)
         if inventory(backup) != original:
             raise ValueError('app_backup_changed')
         resources = app / 'Contents' / 'Resources'
@@ -128,7 +137,8 @@ def run():
                 digest((resources / 'dashboard_beta14.html').read_bytes()) != hashes[2]):
             raise ValueError('signed_candidate_changed')
         shutil.rmtree(app)
-        shutil.copytree(backup, app, symlinks=True)
+        shutil.copytree(backup, app, symlinks=True,
+                        copy_function=copy_file_without_system_flags)
         if inventory(app) != original:
             raise ValueError('copy_rollback_changed')
         codesign(app)
