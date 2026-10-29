@@ -315,6 +315,20 @@ The token is never included in the launch report. The exact owner archive
 compiles in a disposable local copy; a synthetic spawn test verifies token
 handoff without starting Rap Brain. No installed or signed Manager release
 exists for this candidate.
+
+## Remaining transaction handoff blocker
+
+The transaction enters `lifecycle.maintenance()` before writing its first
+`transaction.json` phase. If a future adapter creates `maintenance.ticket`
+there and the Manager crashes before the journal is durable, ordinary launch
+correctly refuses, while `Transaction.recover()` currently sees no journal.
+No code replacement has happened, but clearing the marker without proving the
+unchanged baseline and the ownership of that exact maintenance attempt would
+be unsafe. The production adapter must create a durable attempt identity
+before the marker, then implement authenticated recovery of this pre-journal
+window. This must be drilled with a killed updater process before enabling any
+real stop or UI install button. The new runtime token and OS readers are still
+independent safety components; they have not closed this handoff gap.
 Synthetic behavior tests and the redacted AST compilation pass. The earlier
 Mac result applies to the previous byte-identical candidate only; this newer
 variant needs its own read-only Mac compatibility check after the remaining
