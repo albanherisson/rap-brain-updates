@@ -325,6 +325,11 @@ moment its retained `Popen` child is created. A failed OS query leaves the
 timestamp absent, which must disable a future updater while preserving the
 ordinary launch. Synthetic spawn tests and compilation of the exact archived
 Beta 14 source pass. The Mac app has not received this candidate.
+`owned_supervisor_binding.py` now refuses to enter a future install without
+the exact retained Popen handle, private launch token, OS start identity and
+server source hash recorded by that candidate. It compares the hash to the
+signed update's required server hash and rechecks the live handle. It is
+read-only, has no PID signalling and is not wired to a live update request.
 
 ## Remaining transaction handoff blocker
 
