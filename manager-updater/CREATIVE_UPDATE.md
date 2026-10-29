@@ -250,8 +250,12 @@ take the job lock exclusively before durably creating the maintenance marker.
 The fixture shows that an active job refuses maintenance and that a subsequent
 job cannot start while the marker remains. An in-flight HTTP request also
 refuses maintenance before the marker exists. The marker is deliberately not
-removed by this primitive; only a future reviewed transaction/recovery owner
-may clear it after a terminal journal. This module is not yet inserted into
+removed during a crash or a nonterminal phase. A separate explicit finalizer
+requires a private terminal journal with the expected transaction ID, the
+matching ticket, and a verified owned-process health result; malformed or
+duplicate journal fields leave the marker intact. The future lifecycle owner
+must supply these facts and call that finalizer after commit or rollback.
+This module is not yet inserted into
 the Mac server or connected to Beta 14, so no live worker exclusion is claimed.
 
 `server_worker_activity_candidate.prepare_worker_activity()` now prepares an additional

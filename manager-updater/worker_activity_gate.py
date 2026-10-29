@@ -6,6 +6,7 @@ holding its shared lock, so no job can slip between the idle check and marker.
 The caller must retain the marker until commit or rollback is terminal.
 """
 import fcntl
+import json
 import os
 from pathlib import Path
 import stat
@@ -91,5 +92,67 @@ def begin_maintenance(directory, ticket):
                 os.close(directory_fd)
         finally:
             os.close(fd)
+    finally:
+        os.close(admission_fd)
+
+
+def finish_maintenance(directory, ticket, *, expected_transaction_id,
+                       owned_health_verified):
+    """Release a marker only after a durable terminal journal and owned health."""
+    directory = _state(directory)
+    if owned_health_verified is not True:
+        raise Refused('owned_health_not_verified')
+    admission_fd = _lock(directory, 'admission.lock', fcntl.LOCK_EX)
+    try:
+        job_fd = _lock(directory, 'worker-job.lock', fcntl.LOCK_EX)
+        try:
+            marker_path = directory / 'maintenance.ticket'
+            marker_fd = os.open(marker_path, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                marker_info = os.fstat(marker_fd)
+                if (not stat.S_ISREG(marker_info.st_mode) or
+                        marker_info.st_uid != os.getuid() or marker_info.st_mode & 0o077 or
+                        type(ticket) is not bytes or len(ticket) != 65 or
+                        os.read(marker_fd, 66) != ticket):
+                    raise Refused('maintenance_ticket_mismatch')
+            finally:
+                os.close(marker_fd)
+            journal_fd = os.open(directory / 'transaction.json', os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                info = os.fstat(journal_fd)
+                if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or
+                        info.st_mode & 0o077 or info.st_size > 65536):
+                    raise Refused('unsafe_transaction_journal')
+                raw = os.read(journal_fd, 65537)
+            finally:
+                os.close(journal_fd)
+
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise Refused('duplicate_journal_field')
+                    result[key] = value
+                return result
+
+            try:
+                record = json.loads(raw, object_pairs_hook=unique)
+            except (ValueError, UnicodeError) as exc:
+                raise Refused('invalid_transaction_journal') from exc
+            if (type(expected_transaction_id) is not str or
+                    len(expected_transaction_id) != 32 or
+                    any(c not in '0123456789abcdef' for c in expected_transaction_id) or
+                    type(record) is not dict or
+                    record.get('id') != expected_transaction_id or
+                    record.get('phase') not in ('committed', 'rolled_back', 'aborted')):
+                raise Refused('transaction_not_terminal')
+            os.unlink(marker_path)
+            directory_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        finally:
+            os.close(job_fd)
     finally:
         os.close(admission_fd)

@@ -1,15 +1,17 @@
 import multiprocessing
 import fcntl
+import json
 import os
 from pathlib import Path
 import tempfile
 import unittest
 
 from creative_release import Refused
-from worker_activity_gate import JobLease, begin_maintenance
+from worker_activity_gate import JobLease, begin_maintenance, finish_maintenance
 
 
 TICKET = b'a' * 64 + b'\n'
+TRANSACTION_ID = 'c' * 32
 
 
 def running_job(path, ready, release):
@@ -68,6 +70,41 @@ class WorkerGateTests(unittest.TestCase):
         finally:
             os.close(fd)
         begin_maintenance(self.path, TICKET)
+
+    def test_marker_survives_crash_state_and_only_terminal_healthy_owner_releases(self):
+        begin_maintenance(self.path, TICKET)
+        journal = self.path / 'transaction.json'
+        journal.write_text(json.dumps({'id': TRANSACTION_ID, 'phase': 'switched'}))
+        journal.chmod(0o600)
+        with self.assertRaisesRegex(Refused, 'transaction_not_terminal'):
+            finish_maintenance(self.path, TICKET, expected_transaction_id=TRANSACTION_ID,
+                               owned_health_verified=True)
+        journal.write_text(json.dumps({'id': TRANSACTION_ID, 'phase': 'committed'}))
+        with self.assertRaisesRegex(Refused, 'transaction_not_terminal'):
+            finish_maintenance(self.path, TICKET, expected_transaction_id='d' * 32,
+                               owned_health_verified=True)
+        for ticket, health in ((b'b' * 64 + b'\n', True), (TICKET, False)):
+            with self.assertRaises(Refused):
+                finish_maintenance(self.path, ticket, expected_transaction_id=TRANSACTION_ID,
+                                   owned_health_verified=health)
+        self.assertTrue((self.path / 'maintenance.ticket').exists())
+        finish_maintenance(self.path, TICKET, expected_transaction_id=TRANSACTION_ID,
+                           owned_health_verified=True)
+        self.assertFalse((self.path / 'maintenance.ticket').exists())
+        with JobLease(self.path):
+            pass
+
+    def test_duplicate_or_malformed_journal_never_releases_marker(self):
+        begin_maintenance(self.path, TICKET)
+        journal = self.path / 'transaction.json'
+        journal.touch(mode=0o600)
+        journal.chmod(0o600)
+        for raw in ('{"id":"' + TRANSACTION_ID + '","phase":"switched","phase":"committed"}', '{oops'):
+            journal.write_text(raw)
+            with self.assertRaises(Refused):
+                finish_maintenance(self.path, TICKET, expected_transaction_id=TRANSACTION_ID,
+                                   owned_health_verified=True)
+            self.assertTrue((self.path / 'maintenance.ticket').exists())
 
 
 if __name__ == '__main__':
