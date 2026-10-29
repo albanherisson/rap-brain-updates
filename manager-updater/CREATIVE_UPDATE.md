@@ -423,7 +423,21 @@ check for the final graceful-stop server candidate. It pins the existing three
 public preparer sources to a fixed commit, reads only the previously recognized
 original `server.py`, checks for the local read-only listener inventory tool,
 and compiles the candidate entirely in memory. It never opens the database or
-executes/stops the server. Until the owner runs it, the new endpoint has only
-synthetic source compatibility evidence.
+executes/stops the server.
+On 29 October 2026 the owner ran this check on the Mac. It recognized the
+unchanged active source and compiled the complete candidate in memory with
+SHA-256 `2771e29b46b25ce86439c6d9eb28497395a1ea280a741aa8bf648e741d2b49dd`.
+The report confirms no active file changed, database opened or process stopped.
+It does not validate the server's actual runtime exit or install the candidate.
+
+A further disposable integration drill now connects a locally signed engine
+transaction to a real guarded HTTP parent and analysis worker. It checks both
+a healthy commit and failed-health rollback, using the same durable attempt ID,
+mandatory SQLite/config backup and restore check, and byte-identical data-folder
+snapshot. The real parent exits via the token/ticket stop endpoint; the fixture
+restarts the old code after a failed candidate. OS process start and process
+group collectors are substituted in this sandbox and remain unvalidated on the
+owner's Mac. The release signer is ephemeral test-only, not the production key.
+This drill is not a production Manager lifecycle adapter or an enabled UI button.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
