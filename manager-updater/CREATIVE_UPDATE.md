@@ -301,6 +301,12 @@ read-only OS start-time query and rejects a changed process identity. The
 format parser rejects ambiguous or extra output. Both collectors must still
 be integrated into the same authenticated, atomic maintenance flow; their
 standalone success never authorizes a process stop.
+`authenticated_runtime_client.py` now sends only a token-protected request to
+`127.0.0.1`, bounds the JSON response, rejects duplicate/unknown fields,
+requires the returned parent PID to equal the retained Manager child, and
+refuses an active audio PID or mismatched worker script. A real loopback
+fixture tests the valid and refused cases. This client remains read-only and
+has no connection to a production stop or installer.
 Synthetic behavior tests and the redacted AST compilation pass. The earlier
 Mac result applies to the previous byte-identical candidate only; this newer
 variant needs its own read-only Mac compatibility check after the remaining
