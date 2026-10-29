@@ -293,6 +293,11 @@ refuses a server whose parent is not the Manager, a worker whose parent is not
 that server, or any third process in their group (including an orphaned audio
 helper). A failed or malformed OS snapshot refuses the operation. This does
 not yet bind a live Mac process to the launch handle or enable any signal.
+`process_start_identity.py` checks a retained child handle before and after a
+read-only OS start-time query and rejects a changed process identity. The
+format parser rejects ambiguous or extra output. Both collectors must still
+be integrated into the same authenticated, atomic maintenance flow; their
+standalone success never authorizes a process stop.
 Synthetic behavior tests and the redacted AST compilation pass. The earlier
 Mac result applies to the previous byte-identical candidate only; this newer
 variant needs its own read-only Mac compatibility check after the remaining
