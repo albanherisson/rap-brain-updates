@@ -288,6 +288,9 @@ token provided by the Manager. The route reports only the parent, worker and
 audio process IDs, and rejects an absent or wrong token. This is one input to
 the future ownership check, not proof that a returned PID is safe to stop;
 the retained launch handle and fresh OS process inventory still have to match.
+The candidate now also reports whether the retained worker launch arguments
+refer to this exact server script and Python executable; mismatches remain a
+refusal condition. It does not return the full command line or any token.
 `process_group_inventory.py` now parses a read-only OS process snapshot and
 refuses a server whose parent is not the Manager, a worker whose parent is not
 that server, or any third process in their group (including an orphaned audio

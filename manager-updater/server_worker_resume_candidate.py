@@ -63,12 +63,18 @@ def _rb_runtime_proof_get_v1(self):
     import os as __rb_os
     import re as __rb_re
     import secrets as __rb_secrets
+    import sys as __rb_sys
     __rb_token = __rb_os.environ.get('RB_UPDATE_PROBE_TOKEN', '')
     __rb_supplied = self.headers.get('X-RB-Update-Token', '')
     if (not __rb_re.fullmatch(r'[0-9a-f]{64}', __rb_token) or
             not __rb_secrets.compare_digest(__rb_token, __rb_supplied)):
         return self.send({'error': 'not_found'}, 404)
     __rb_worker = WORKER_PROCESS
+    __rb_args = getattr(__rb_worker, 'args', None)
+    __rb_script = str(__import__('pathlib').Path(__file__).resolve())
+    __rb_worker_script_matches = (
+        type(__rb_args) in (list, tuple) and len(__rb_args) == 3 and
+        __rb_args[0] == __rb_sys.executable and __rb_args[1] == __rb_script)
     with AUDIO_LOCK:
         __rb_audio = AUDIO_STATE.get('process')
         __rb_audio_pid = (__rb_audio.pid if __rb_audio is not None and
@@ -77,6 +83,7 @@ def _rb_runtime_proof_get_v1(self):
         'parent_pid': __rb_os.getpid(),
         'worker_pid': (__rb_worker.pid if __rb_worker is not None and
                        __rb_worker.poll() is None else None),
+        'worker_script_matches': __rb_worker_script_matches,
         'audio_pid': __rb_audio_pid,
     }, 200)
 

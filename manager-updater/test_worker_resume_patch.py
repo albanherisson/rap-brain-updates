@@ -2,6 +2,7 @@ import hashlib
 import os
 from pathlib import Path
 import tempfile
+import sys
 import unittest
 
 from server_worker_resume_candidate import prepare_worker_activity
@@ -25,7 +26,7 @@ class WorkerResumeTests(unittest.TestCase):
     def test_resume_is_blocked_by_marker_then_allowed(self):
         candidate = prepare_worker_activity(
             RESUME_FIXTURE, hashlib.sha256(RESUME_FIXTURE).hexdigest())
-        scope = {'__name__': 'fixture'}
+        scope = {'__name__': 'fixture', '__file__': str(Path(__file__).resolve())}
         exec(candidate, scope)
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp:
             home = Path(temp) / 'home'
@@ -52,10 +53,10 @@ class WorkerResumeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'unsupported_worker_flow'):
             prepare_worker_activity(FIXTURE, hashlib.sha256(FIXTURE).hexdigest())
 
-    def test_runtime_proof_requires_launch_token_and_reports_only_process_ids(self):
+    def test_runtime_proof_requires_token_and_checks_worker_script(self):
         candidate = prepare_worker_activity(
             PROOF_FIXTURE, hashlib.sha256(PROOF_FIXTURE).hexdigest())
-        scope = {'__name__': 'fixture'}
+        scope = {'__name__': 'fixture', '__file__': str(Path(__file__).resolve())}
         exec(candidate, scope)
         handler = scope['Handler'].__new__(scope['Handler'])
         handler.path = '/api/manager-update-proof'
@@ -66,7 +67,20 @@ class WorkerResumeTests(unittest.TestCase):
             report, status = handler.do_GET()
             self.assertEqual(status, 200)
             self.assertEqual(report, {'parent_pid': os.getpid(),
-                                      'worker_pid': None, 'audio_pid': None})
+                                      'worker_pid': None, 'audio_pid': None,
+                                      'worker_script_matches': False})
+            class Worker:
+                pid = 5200
+                args = [sys.executable, str(Path(__file__).resolve()), '--worker']
+                def poll(self):
+                    return None
+            scope['WORKER_PROCESS'] = Worker()
+            report, status = handler.do_GET()
+            self.assertEqual(status, 200)
+            self.assertEqual(report['worker_pid'], 5200)
+            self.assertIs(report['worker_script_matches'], True)
+            scope['WORKER_PROCESS'].args[1] = '/tmp/unrelated.py'
+            self.assertIs(handler.do_GET()[0]['worker_script_matches'], False)
             handler.headers['X-RB-Update-Token'] = 'b' * 64
             self.assertEqual(handler.do_GET()[1], 404)
         finally:
