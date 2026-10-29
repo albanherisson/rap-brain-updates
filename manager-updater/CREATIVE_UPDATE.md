@@ -268,4 +268,12 @@ this is still not validation of the unredacted candidate on the owner's Mac.
 The existing prepared candidate and read-only Mac probe remain unchanged;
 this new source variant is not installed or distributed.
 
+`mac_worker_candidate_readonly_probe.py` provides one further owner-side
+compatibility check for that variant. It reads the known live `server.py`,
+verifies the original SHA-256, fetches only the two public preparers at a fixed
+commit with independent SHA-256 pins, and compiles the new candidate entirely
+in memory. It does not import/execute the server or read data, config or keys.
+A successful output would establish source compatibility only; it cannot prove
+the running worker is idle or enable installation.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
