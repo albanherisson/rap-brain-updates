@@ -367,4 +367,16 @@ both only after a committed healthy result. The fixture verifies the entire
 data folder remains byte-identical. This is interface evidence, not the real
 Manager-owned process adapter.
 
+`runtime_evidence.py` now collects a single read-only shutdown boundary for a
+retained Manager child. Under exclusive HTTP and worker locks it checks the
+private ticket, launch script hash and retained handle start identity, obtains
+the token-authenticated parent/worker/audio report, checks fresh OS parentage
+and process group, reads only grouped SQLite job states, and rechecks the handle.
+It rejects a queued job or busy worker lock. It never signals a process, and
+its success is only a short-lived snapshot: the future lifecycle adapter must
+create/authenticate the maintenance attempt first and collect it again directly
+before stopping the exact owned handle. The endpoint is supplied only by the
+isolated guarded server candidate, not the live server. A separate signed
+bootstrap and real Mac lifecycle validation are still required.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
