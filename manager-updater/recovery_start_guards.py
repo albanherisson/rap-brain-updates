@@ -80,7 +80,12 @@ def prepare_server(raw, expected_sha256=None):
     # The base lifetime guard must acquire the shared lock first. The check
     # runs before worker_main(), init(), or any database access.
     line = main.body[0].end_lineno
-    lines.insert(line, '    __rb_check_terminal_without_ticket_v1()\n')
+    first = lines[main.body[0].lineno - 1]
+    indent = first[:len(first) - len(first.lstrip(' \t'))]
+    if (not indent or len(indent) > 8 or
+            main.body[0].col_offset != len(indent.expandtabs(8))):
+        raise ValueError('unsupported_guarded_server_indentation')
+    lines.insert(line, indent + '__rb_check_terminal_without_ticket_v1()\n')
     lines.insert(main.lineno - 1, SERVER_CHECK)
     output = ''.join(lines).encode('utf-8')
     compile(output, 'server.py', 'exec')

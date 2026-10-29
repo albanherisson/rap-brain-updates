@@ -28,6 +28,17 @@ def handle_launch_request(root, rap_dir, backup_dir, state):
 
 
 class RecoveryStartupTests(unittest.TestCase):
+    def test_server_uses_the_existing_entrypoint_indentation(self):
+        for indent in ('  ', '    ', '        '):
+            raw = ("if __name__ == '__main__':\n" + indent +
+                   "print('READY', flush=True)\n").encode()
+            guarded = prepare_lifetime(raw, hashlib.sha256(raw).hexdigest())
+            with patch('recovery_start_guards.prepare_graceful_server',
+                       return_value=guarded):
+                candidate = prepare_server(raw)
+            self.assertIn((indent + '__rb_check_terminal_without_ticket_v1()\n').encode(),
+                          candidate)
+
     def test_direct_server_rejects_orphan_intent_and_pending_journal(self):
         previous = prepare_lifetime(SERVER, hashlib.sha256(SERVER).hexdigest())
         with patch('recovery_start_guards.prepare_graceful_server', return_value=previous):
