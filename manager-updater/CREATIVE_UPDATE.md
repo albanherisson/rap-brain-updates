@@ -307,6 +307,14 @@ requires the returned parent PID to equal the retained Manager child, and
 refuses an active audio PID or mismatched worker script. A real loopback
 fixture tests the valid and refused cases. This client remains read-only and
 has no connection to a production stop or installer.
+`beta14_runtime_token_candidate.py` prepares a separate copy of the exact
+Beta 14 launcher. It reuses the pinned ordinary-launch gate, gives a fresh
+256-bit random probe token only to the `Popen` child through its environment,
+and retains it next to the owned process handle in private supervisor state.
+The token is never included in the launch report. The exact owner archive
+compiles in a disposable local copy; a synthetic spawn test verifies token
+handoff without starting Rap Brain. No installed or signed Manager release
+exists for this candidate.
 Synthetic behavior tests and the redacted AST compilation pass. The earlier
 Mac result applies to the previous byte-identical candidate only; this newer
 variant needs its own read-only Mac compatibility check after the remaining
