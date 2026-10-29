@@ -12,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 PORT = int(os.getenv('RAP_BRAIN_PORT', '8765'))
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
+        from pathlib import Path
+        Path(os.environ['HOME'], 'fixture-request').write_text(self.path)
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
@@ -38,8 +40,10 @@ class RunnerTests(unittest.TestCase):
                                         listener_check=lambda port, pid: True)
             except Refused as exc:
                 marker = home / 'fixture-started'
+                requested = home / 'fixture-request'
                 self.fail(f'{exc}; child_started={marker.exists()}; '
-                          f'port={marker.read_text() if marker.exists() else "missing"}')
+                          f'port={marker.read_text() if marker.exists() else "missing"}; '
+                          f'request={requested.read_text() if requested.exists() else "missing"}')
             self.assertTrue(report['status_ok'])
             self.assertNotEqual(report['port'], 8765)
             with self.assertRaises(ProcessLookupError):
