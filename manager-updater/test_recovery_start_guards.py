@@ -47,6 +47,10 @@ class RecoveryStartupTests(unittest.TestCase):
                                       capture_output=True, text=True, timeout=5)
 
             self.assertEqual(start().stdout.strip(), 'READY')
+            bootstrap = state / 'bootstrap-intent.json'
+            bootstrap.write_text('{}')
+            self.assertNotEqual(start().returncode, 0)
+            bootstrap.unlink()
             intent = state / 'maintenance-intent.json'
             intent.write_text('{}')
             self.assertNotEqual(start().returncode, 0)
@@ -77,6 +81,13 @@ class RecoveryStartupTests(unittest.TestCase):
             state = {}
             scope['handle_launch_request'](root, root, backup, state)
             self.assertEqual(state.get('refused'), 'update_recovery_required')
+            self.assertNotIn('spawned', state)
+            (state_dir / 'maintenance-intent.json').unlink()
+            (state_dir / 'bootstrap-intent.json').write_text('{}')
+            (root / 'launch-request.json').touch()
+            state.clear()
+            scope['handle_launch_request'](root, root, backup, state)
+            self.assertEqual(state.get('refused'), 'bootstrap_recovery_required')
             self.assertNotIn('spawned', state)
 
 

@@ -507,5 +507,9 @@ preparers. It never writes either file. The private signing key remains on
 the owner's Mac, and no such production manifest exists yet. The two-file
 offline transaction and its crash recovery must be implemented and validated
 before a bootstrap can be offered as one click.
+The final guarded server refuses a stranded bootstrap intent when no valid
+maintenance ticket exists; the final Beta 14 launcher refuses that intent
+before spawning. A ticketed bootstrap health restart can still run under the
+existing server lifetime guard. These checks are tested on disposable copies.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

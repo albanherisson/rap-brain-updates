@@ -22,6 +22,8 @@ def __rb_check_terminal_without_ticket_v1():
     # its shared lock. A matching ticket is required for an updater restart.
     if __rb_os.path.lexists(__rb_root / 'maintenance.ticket'):
         return
+    if __rb_os.path.lexists(__rb_root / 'bootstrap-intent.json'):
+        raise RuntimeError('bootstrap_recovery_required')
     if __rb_os.path.lexists(__rb_root / 'maintenance-intent.json'):
         raise RuntimeError('update_recovery_required')
     __rb_path = __rb_root / 'transaction.json'
@@ -92,6 +94,8 @@ def prepare_launcher(raw, expected_sha256=None):
     if candidate.count(anchor) != 1:
         raise ValueError('unsupported_beta14_launch_gate')
     candidate = candidate.replace(anchor, anchor +
+        "    if __rb_os.path.lexists(__rb_state / 'bootstrap-intent.json'):\n"
+        "        raise RuntimeError('bootstrap_recovery_required')\n" +
         "    if __rb_os.path.lexists(__rb_state / 'maintenance-intent.json'):\n"
         "        raise RuntimeError('update_recovery_required')\n", 1)
     output = candidate.encode('utf-8')
