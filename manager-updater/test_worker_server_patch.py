@@ -2,6 +2,8 @@ import hashlib
 import os
 from pathlib import Path
 import tempfile
+import threading
+import time
 import unittest
 
 from server_worker_activity_candidate import prepare_worker_activity
@@ -45,8 +47,14 @@ class WorkerPatchTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'maintenance_in_progress'):
                     scope['job_runner'](3, 4)
                 self.assertEqual(scope['calls'], [(1, 2)])
+                worker = threading.Thread(target=scope['worker_main'], daemon=True)
+                worker.start()
+                time.sleep(0.15)
+                self.assertTrue(worker.is_alive())
+                self.assertEqual(scope['calls'], [(1, 2)])
                 marker.unlink()
-                scope['worker_main']()
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
                 self.assertEqual(scope['calls'][-1], 'worker_started')
             finally:
                 if old_home is None:
