@@ -24,8 +24,8 @@ def _state(directory):
     return directory
 
 
-def _lock(directory, operation):
-    fd = os.open(directory / 'worker-job.lock',
+def _lock(directory, name, operation):
+    fd = os.open(directory / name,
                  os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
     try:
         info = os.fstat(fd)
@@ -49,7 +49,7 @@ class JobLease:
 
     def __enter__(self):
         directory = _state(self.directory)
-        fd = _lock(directory, fcntl.LOCK_SH)
+        fd = _lock(directory, 'worker-job.lock', fcntl.LOCK_SH)
         if os.path.lexists(directory / 'maintenance.ticket'):
             os.close(fd)
             raise Refused('maintenance_in_progress')
@@ -68,22 +68,28 @@ def begin_maintenance(directory, ticket):
             ticket[-1:] != b'\n' or
             any(c not in b'0123456789abcdef' for c in ticket[:-1])):
         raise Refused('invalid_maintenance_ticket')
-    fd = _lock(directory, fcntl.LOCK_EX)
+    # HTTP requests hold admission.lock shared until their handler returns.
+    # Taking it first prevents any new POST from racing with the marker.
+    admission_fd = _lock(directory, 'admission.lock', fcntl.LOCK_EX)
     try:
-        path = directory / 'maintenance.ticket'
-        marker = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        fd = _lock(directory, 'worker-job.lock', fcntl.LOCK_EX)
         try:
-            with os.fdopen(marker, 'wb') as stream:
-                stream.write(ticket)
-                stream.flush()
-                os.fsync(stream.fileno())
-        except BaseException:
-            # A partial marker deliberately remains: recovery must fail closed.
-            raise
-        directory_fd = os.open(directory, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
+            path = directory / 'maintenance.ticket'
+            marker = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            try:
+                with os.fdopen(marker, 'wb') as stream:
+                    stream.write(ticket)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except BaseException:
+                # A partial marker remains: recovery must fail closed.
+                raise
+            directory_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         finally:
-            os.close(directory_fd)
+            os.close(fd)
     finally:
-        os.close(fd)
+        os.close(admission_fd)

@@ -245,9 +245,11 @@ collected on the owner's Mac, and this policy does not enable stopping it.
 
 `worker_activity_gate.py` is a disposable process fixture primitive for the
 remaining worker race. Its shared lock covers an entire job, while an updater
-must take the exclusive lock before durably creating the maintenance marker.
+must first take the HTTP admission lock exclusively to drain requests, then
+take the job lock exclusively before durably creating the maintenance marker.
 The fixture shows that an active job refuses maintenance and that a subsequent
-job cannot start while the marker remains. The marker is deliberately not
+job cannot start while the marker remains. An in-flight HTTP request also
+refuses maintenance before the marker exists. The marker is deliberately not
 removed by this primitive; only a future reviewed transaction/recovery owner
 may clear it after a terminal journal. This module is not yet inserted into
 the Mac server or connected to Beta 14, so no live worker exclusion is claimed.

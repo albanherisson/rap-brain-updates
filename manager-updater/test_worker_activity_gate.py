@@ -1,4 +1,5 @@
 import multiprocessing
+import fcntl
 import os
 from pathlib import Path
 import tempfile
@@ -56,6 +57,17 @@ class WorkerGateTests(unittest.TestCase):
             with JobLease(self.path):
                 self.fail('An unsafe gate admitted a job')
         self.path.chmod(0o700)
+
+    def test_in_flight_http_request_refuses_maintenance_before_marker(self):
+        fd = os.open(self.path / 'admission.lock', os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            with self.assertRaisesRegex(Refused, 'worker_busy_or_maintenance'):
+                begin_maintenance(self.path, TICKET)
+            self.assertFalse((self.path / 'maintenance.ticket').exists())
+        finally:
+            os.close(fd)
+        begin_maintenance(self.path, TICKET)
 
 
 if __name__ == '__main__':
