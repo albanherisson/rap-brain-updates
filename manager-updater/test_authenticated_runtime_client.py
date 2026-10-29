@@ -2,8 +2,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import threading
 import unittest
+from unittest.mock import patch, Mock
 
-from authenticated_runtime_client import parse_response, read_runtime_proof
+from authenticated_runtime_client import parse_response, read_runtime_proof, assert_owned_listener
 from creative_release import Refused
 
 
@@ -34,11 +35,12 @@ class RuntimeClientTests(unittest.TestCase):
         worker.start()
         try:
             port = server.server_address[1]
-            self.assertEqual(read_runtime_proof(port, TOKEN, expected_parent_pid=5100)['worker_pid'], 5101)
-            with self.assertRaisesRegex(Refused, 'identity_mismatch'):
-                read_runtime_proof(port, TOKEN, expected_parent_pid=9999)
-            with self.assertRaisesRegex(Refused, 'not_authenticated'):
-                read_runtime_proof(port, 'b' * 64, expected_parent_pid=5100)
+            with patch('authenticated_runtime_client.assert_owned_listener', return_value=True):
+                self.assertEqual(read_runtime_proof(port, TOKEN, expected_parent_pid=5100)['worker_pid'], 5101)
+                with self.assertRaisesRegex(Refused, 'identity_mismatch'):
+                    read_runtime_proof(port, TOKEN, expected_parent_pid=9999)
+                with self.assertRaisesRegex(Refused, 'not_authenticated'):
+                    read_runtime_proof(port, 'b' * 64, expected_parent_pid=5100)
         finally:
             server.shutdown()
             worker.join(3)
@@ -52,6 +54,15 @@ class RuntimeClientTests(unittest.TestCase):
                     valid[:-1] + b',"lyrics":"secret"}'):
             with self.subTest(raw=raw), self.assertRaises(Refused):
                 parse_response(raw, expected_parent_pid=5100)
+
+    def test_token_never_sent_when_listener_is_not_owned(self):
+        with patch('authenticated_runtime_client.subprocess.run',
+                   return_value=Mock(stdout='p5200\n', stderr='')):
+            with self.assertRaisesRegex(Refused, 'listener_not_owned'):
+                read_runtime_proof(8765, TOKEN, expected_parent_pid=5100)
+        with patch('authenticated_runtime_client.subprocess.run',
+                   return_value=Mock(stdout='p5100\n', stderr='')):
+            self.assertTrue(assert_owned_listener(8765, 5100))
 
 
 if __name__ == '__main__':

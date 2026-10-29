@@ -307,6 +307,10 @@ requires the returned parent PID to equal the retained Manager child, and
 refuses an active audio PID or mismatched worker script. A real loopback
 fixture tests the valid and refused cases. This client remains read-only and
 has no connection to a production stop or installer.
+Before sending the private token it also requires the local listener PID to
+match the retained child through a bounded macOS `lsof` query, and checks again
+after the response. A different or uninspectable listener refuses the request.
+This OS query has not yet been validated on the owner's Mac.
 `beta14_runtime_token_candidate.py` prepares a separate copy of the exact
 Beta 14 launcher. It reuses the pinned ordinary-launch gate, gives a fresh
 256-bit random probe token only to the `Popen` child through its environment,

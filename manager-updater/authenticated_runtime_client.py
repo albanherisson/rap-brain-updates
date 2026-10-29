@@ -2,6 +2,7 @@
 import http.client
 import json
 import re
+import subprocess
 
 from creative_release import Refused
 
@@ -37,10 +38,33 @@ def parse_response(raw, *, expected_parent_pid):
     return report
 
 
+def assert_owned_listener(port, expected_parent_pid):
+    """Refuse to disclose the private token to an unrelated loopback listener."""
+    if (type(port) is not int or not 1 <= port <= 65535 or
+            type(expected_parent_pid) is not int or expected_parent_pid < 2):
+        raise Refused('listener_identity_invalid')
+    try:
+        result = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port}',
+                                 '-sTCP:LISTEN', '-Fp'],
+                                capture_output=True, text=True, timeout=5,
+                                stdin=subprocess.DEVNULL, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refused('listener_identity_unavailable') from exc
+    lines = result.stdout.splitlines()
+    pids = [int(line[1:]) for line in lines
+            if re.fullmatch(r'p[0-9]+', line)]
+    if (result.stderr or len(result.stdout) > 4096 or not lines or
+            any(not re.fullmatch(r'p[0-9]+', line) for line in lines) or
+            len(pids) != 1 or pids[0] != expected_parent_pid):
+        raise Refused('listener_not_owned')
+    return True
+
+
 def read_runtime_proof(port, token, *, expected_parent_pid):
     if (type(port) is not int or not 1 <= port <= 65535 or
             type(token) is not str or not re.fullmatch(r'[0-9a-f]{64}', token)):
         raise Refused('runtime_request_invalid')
+    assert_owned_listener(port, expected_parent_pid)
     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=3)
     try:
         connection.request('GET', '/api/manager-update-proof',
@@ -48,7 +72,9 @@ def read_runtime_proof(port, token, *, expected_parent_pid):
         response = connection.getresponse()
         if response.status != 200 or response.getheader('Content-Type', '').split(';')[0] != 'application/json':
             raise Refused('runtime_proof_not_authenticated')
-        return parse_response(response.read(4097), expected_parent_pid=expected_parent_pid)
+        report = parse_response(response.read(4097), expected_parent_pid=expected_parent_pid)
+        assert_owned_listener(port, expected_parent_pid)
+        return report
     except (OSError, http.client.HTTPException) as exc:
         raise Refused('runtime_proof_unavailable') from exc
     finally:

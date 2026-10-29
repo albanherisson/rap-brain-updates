@@ -24,7 +24,9 @@ class Child:
 
 class EvidenceTests(unittest.TestCase):
     def test_owned_snapshot_drains_locks_and_refuses_busy_or_changed_jobs(self):
-        with tempfile.TemporaryDirectory() as temporary:
+        # macOS /var is a symlink to /private/var; production deliberately
+        # rejects symlink parents. Place this disposable fixture under checkout.
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temporary:
             root = Path(temporary)
             source = root / 'source'
             data = source / 'data'
