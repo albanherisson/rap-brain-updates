@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
 
-from beta14_one_click_candidate import prepare_dashboard, prepare_launcher
+from beta14_one_click_candidate import PARENT_HANDLER, prepare_dashboard, prepare_launcher
 
 
 ARCHIVE = Path(__file__).resolve().parents[2] / 'evidence' / 'RapBrainManager_App_Beta14.zip'
@@ -16,6 +16,8 @@ ARCHIVE = Path(__file__).resolve().parents[2] / 'evidence' / 'RapBrainManager_Ap
 
 class OneClickCandidateTests(unittest.TestCase):
     def setUp(self):
+        if not ARCHIVE.is_file():
+            self.skipTest('owner Beta 14 archive unavailable in this checkout')
         self.temp = tempfile.TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
@@ -53,9 +55,16 @@ class OneClickCandidateTests(unittest.TestCase):
         self.assertTrue(json.loads(result.stdout)['real_manager_mutations_disabled'])
         self.assertEqual((fake_source / 'server.py').read_text(), '# fixture\n')
 
+class ParentHandlerTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=Path.cwd())
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        namespace = {'json': json}
+        exec(PARENT_HANDLER, namespace)
+        self.handler = namespace['handle_creative_install_request']
+
     def test_parent_consumes_request_and_reports_transaction_result(self):
-        namespace = {'__name__': 'isolated_beta14_candidate'}
-        exec(compile(prepare_launcher(self.launcher), 'launch_manager.py', 'exec'), namespace)
         request = self.root / 'creative-install-request.json'
         request.write_text(json.dumps({'action': 'install-signed-creative'}))
         source = self.root / 'source'
@@ -66,7 +75,7 @@ class OneClickCandidateTests(unittest.TestCase):
         with patch('creative_install_controller.install_owned_creative',
                    return_value={'state': 'committed', 'installation_performed': True,
                                  'database_replaced': False}) as install:
-            namespace['handle_creative_install_request'](
+            self.handler(
                 self.root, source, backups, state)
         install.assert_called_once_with(source, backups / 'secure-update', state)
         self.assertFalse(request.exists())
@@ -75,11 +84,9 @@ class OneClickCandidateTests(unittest.TestCase):
         self.assertTrue(result['installation_performed'])
 
     def test_parent_refuses_unexpected_request_without_invoking_installer(self):
-        namespace = {'__name__': 'isolated_beta14_candidate'}
-        exec(compile(prepare_launcher(self.launcher), 'launch_manager.py', 'exec'), namespace)
         (self.root / 'creative-install-request.json').write_text('{"action":"other"}')
         with patch('creative_install_controller.install_owned_creative') as install:
-            namespace['handle_creative_install_request'](
+            self.handler(
                 self.root, self.root, self.root, {})
         install.assert_not_called()
         result = json.loads((self.root / 'creative-install-result.json').read_text())

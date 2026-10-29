@@ -562,4 +562,13 @@ is a candidate only: the two-file bootstrap verifier does not accept this
 launcher/dashboard pair, updater modules are not bundled, no button is active
 on the owner's Mac, and a production Creative release has not been published.
 
+The complete first-bootstrap release verifier now requires the guarded server,
+the patched Beta 14 launcher and dashboard, all 17 transitive Python modules
+used by the install controller, and the CryptoKit Swift verifier in one signed
+archive. `bootstrap_full_release.py` validates an exact member list and each
+signed digest before any extraction. This supersedes the earlier two-file
+prototype as the intended release format. A full multi-file transaction and
+offline first-bootstrap lifecycle still need implementation and Mac validation;
+the verifier alone cannot install an update.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
