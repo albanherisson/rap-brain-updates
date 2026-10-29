@@ -456,4 +456,16 @@ looks terminal. This closes an unsafe path where an incomplete older attempt
 could otherwise reach the next install through a permissive lifecycle fixture.
 Explicit verified recovery is still required to clear such artifacts.
 
+The final isolated server and launcher candidates now pass through
+`recovery_start_guards.py`. A direct `server.py` start refuses an orphaned
+pre-journal intent, a pending/malformed transaction journal, or a journal for
+another source even if its ticket is missing. The ordinary Beta 14 launch
+likewise refuses an orphaned intent. Ticketed transaction restarts still use
+the existing guarded path. The older Mac read-only probes and their pinned
+preparers remain unchanged; the owner's previous candidate hashes attest only
+those earlier candidates. The new wrappers compile against the archived
+Beta 14 launcher and disposable guarded-server fixture, and startup refusal
+is tested with disposable subprocesses. Neither final candidate is installed
+or a production lifecycle adapter.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
