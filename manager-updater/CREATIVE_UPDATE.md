@@ -475,4 +475,14 @@ returned lease for another attempt is refused as well. The disposable crash
 tests provide an explicit fixture implementation. The production resume path
 still needs to authenticate the original ticket and prove every writer stopped.
 
+`pending_attempt_recovery.py` provides the first stopped-server recovery
+boundary. It reads the private ticket, intent and pending journal with strict
+identity checks, obtains the exclusive guarded-server lifetime lock plus the
+admission/job locks, and requires a separately supplied local-listener absence
+check. It returns the original ticket while retaining the lifetime lock; it
+does not restart, clear markers, or modify code/data. Disposable tests refuse
+an active guarded writer, a listener, a different attempt, and a terminal
+journal. The macOS listener census and authenticated restart still belong to
+the unfinished production lifecycle adapter.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
