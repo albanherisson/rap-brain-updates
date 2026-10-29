@@ -169,7 +169,8 @@ class BootstrapTransaction:
             return None
         record = self._read_journal()
         if (type(record) is not dict or record.keys() !=
-                {'id', 'source', 'launcher', 'modes', 'sequence', 'phase'} or
+                {'id', 'source', 'launcher', 'modes', 'sequence', 'phase',
+                 'baseline_server_sha256', 'baseline_launcher_sha256'} or
                 record.get('source') != str(self.source) or
                 record.get('launcher') != str(self.launcher)):
             raise Refused('bootstrap_journal_identity_changed')
@@ -182,7 +183,10 @@ class BootstrapTransaction:
                 type(record.get('modes')) is not dict or
                 record['modes'].keys() != {'server.py', 'launch_manager.py'} or
                 any(type(mode) is not int or not 0 <= mode <= 0o777
-                    for mode in record['modes'].values())):
+                    for mode in record['modes'].values()) or
+                any(type(record.get(name)) is not str or len(record[name]) != 64 or
+                    any(c not in '0123456789abcdef' for c in record[name])
+                    for name in ('baseline_server_sha256', 'baseline_launcher_sha256'))):
             raise Refused('bootstrap_journal_invalid')
         if record['phase'] in TERMINAL:
             return None
@@ -194,7 +198,22 @@ class BootstrapTransaction:
             if getattr(lease, 'transaction_id', None) != record['id']:
                 raise Refused('bootstrap_attempt_changed')
             self._assert_excluded(lease)
-            if record['phase'] in ('preparing', 'backup_ready'):
+            if record['phase'] == 'preparing':
+                # No code replacement is possible in this phase. The backup
+                # can be incomplete after a crash, so restoring the original
+                # process must not depend on reading partial backup files.
+                if (digest(safe_path(self.server).read_bytes()) !=
+                        record['baseline_server_sha256'] or
+                        digest(safe_path(self.launcher).read_bytes()) !=
+                        record['baseline_launcher_sha256']):
+                    raise Refused('bootstrap_baseline_changed_during_recovery')
+                phase = 'aborted' if lease.start_and_check() else 'restored_stopped'
+                if phase == 'restored_stopped':
+                    lease.stop_candidate()
+                    lease.assert_stopped()
+                self.record(record, phase)
+                return {'state': phase, 'installation_performed': False}
+            if record['phase'] == 'backup_ready':
                 manifest, _, originals = self._verify_saved(folder)
                 if (digest(safe_path(self.server).read_bytes()) !=
                         manifest['baseline_server_sha256'] or
@@ -242,7 +261,9 @@ class BootstrapTransaction:
                          (('server.py', self.server), ('launch_manager.py', self.launcher))}
                 record = {'id': identifier, 'source': str(self.source),
                           'launcher': str(self.launcher), 'modes': modes,
-                          'sequence': manifest['sequence']}
+                          'sequence': manifest['sequence'],
+                          'baseline_server_sha256': manifest['baseline_server_sha256'],
+                          'baseline_launcher_sha256': manifest['baseline_launcher_sha256']}
                 self.record(record, 'preparing')
                 try:
                     self._backup(folder, manifest_bytes, archive_bytes, originals)
@@ -258,8 +279,8 @@ class BootstrapTransaction:
                     if not lease.start_and_check():
                         raise Refused('bootstrap_health_failed')
                 except Exception:
-                    # If backup is incomplete, recovery must remain fail-closed
-                    # instead of restoring from an unverified partial folder.
+                    # A complete backup can support rollback; a partial one
+                    # can only restart byte-identical originals, never swap.
                     if ((folder / 'backup.json').exists() and
                             (folder / 'bootstrap-release.json').exists()):
                         return self._rollback(record, folder, lease)

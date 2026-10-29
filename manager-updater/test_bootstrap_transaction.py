@@ -181,6 +181,33 @@ class BootstrapTransactionTests(unittest.TestCase):
                          'aborted')
         self.assertFalse((self.state / 'maintenance.ticket').exists())
 
+    def test_crash_during_partial_backup_recovers_without_reading_partial_files(self):
+        # The updater stopped after writing the journal but before completing
+        # the SQLite backup. A new run may safely restart unchanged originals.
+        (self.state / 'bootstrap-intent.json').write_text(json.dumps({
+            'id': IDENTIFIER, 'source': str(self.source),
+            'launcher': str(self.launcher),
+            'ticket_sha256': hashlib.sha256(OfflineFixture.ticket).hexdigest()}))
+        (self.state / 'bootstrap-intent.json').chmod(0o600)
+        (self.state / 'maintenance.ticket').write_bytes(OfflineFixture.ticket)
+        (self.state / 'maintenance.ticket').chmod(0o600)
+        (self.state / IDENTIFIER).mkdir(mode=0o700)
+        (self.state / IDENTIFIER / 'bootstrap-release.json').write_bytes(b'incomplete')
+        journal = self.state / 'bootstrap-transaction.json'
+        journal.write_text(json.dumps({'id': IDENTIFIER, 'source': str(self.source),
+            'launcher': str(self.launcher), 'modes': {'server.py': 0o644,
+                'launch_manager.py': 0o644}, 'sequence': 1, 'phase': 'preparing',
+            'baseline_server_sha256': digest(self.before['server.py']),
+            'baseline_launcher_sha256': digest(self.before['launch_manager.py'])}))
+        journal.chmod(0o600)
+        result = self.transaction([True]).recover()
+        self.assertEqual(result['state'], 'aborted')
+        self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
+        self.assertEqual(self.launcher.read_bytes(), self.before['launch_manager.py'])
+        self.assertEqual(self.saved, {p.name: p.read_bytes()
+                                      for p in (self.source / 'data').iterdir()})
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+
     def test_bad_signature_refuses_before_offline_maintenance(self):
         changed = self.signed.replace(b'"sequence":1', b'"sequence":2')
         with self.assertRaises(ValueError):
