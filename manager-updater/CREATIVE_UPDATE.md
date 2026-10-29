@@ -613,4 +613,16 @@ re-signing. This lifecycle passes disposable fixtures, but its actual Mac
 stop/restart, process census, code-signing and crash recovery are not yet
 owner-validated; no production installer calls it and no release is signed.
 
+`first_bootstrap_installer.py` now connects a fixed GitHub Pages bootstrap
+channel to the full verifier, repeated offline gate, lifecycle and transaction.
+It refuses the owner's current active server/Manager state before any network
+request. The signed v2 manifest binds a single archive URL under
+`manager-bootstrap`, and the downloader verifies the publisher and exact
+active baseline before fetching the archive, rejecting redirects and size
+changes. The entrypoint requires an explicit install flag; no production
+manifest or archive has been published and it must not be run on the Mac yet.
+Disposable tests cover the orchestration, signature-before-download order and
+rollback. Actual owner-Mac runtime validation and signing with the existing
+local Manager publisher key are still prerequisites.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

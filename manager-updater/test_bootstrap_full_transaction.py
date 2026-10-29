@@ -7,7 +7,7 @@ import sqlite3
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -18,6 +18,7 @@ from bootstrap_full_transaction import FullBootstrapTransaction
 from bootstrap_runtime_resources import RUNTIME_FILES
 from creative_release import Refused, canonical, digest
 from offline_bootstrap_lifecycle import MacOfflineBootstrapLifecycle
+from first_bootstrap_installer import install_from_channel
 from test_bootstrap_transaction import OfflineFixture, IDENTIFIER
 
 
@@ -76,6 +77,7 @@ class FullTransactionTests(unittest.TestCase):
             'sequence': 1, 'issued_at': now - 1, 'expires_at': now + 3600,
             'production_install_authorized': True, 'data_migrations': [],
             'validation': {'isolated_rollback': 'passed', 'macos_runtime': 'passed'},
+            'archive_url': 'https://albanherisson.github.io/rap-brain-updates/manager-bootstrap/guarded-1.zip',
             'archive_sha256': digest(self.archive), 'archive_bytes': len(self.archive),
             'runtime_sha256': {name: digest(self.after[name]) for name in RUNTIME_FILES}}
         for kind, path in zip(('server', 'launcher', 'dashboard'), PRIMARY):
@@ -252,6 +254,33 @@ class FullTransactionTests(unittest.TestCase):
         self.assertFalse((self.state / 'maintenance.ticket').exists())
         self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
         self.assert_app_signature_preserved()
+        self.assert_data_preserved()
+
+    def test_external_installer_refuses_active_mac_before_download(self):
+        downloader = Mock()
+        inspector = lambda *_: {'server_process_seen': True,
+                                'manager_process_seen': True,
+                                'port_8765_listening': True}
+        with self.assertRaisesRegex(Refused, 'still_running'):
+            install_from_channel(self.source, self.launcher, self.state,
+                inspector=inspector, downloader=downloader, pinned_key=self.pin)
+        downloader.assert_not_called()
+        self.assertFalse((self.state / 'bootstrap-intent.json').exists())
+
+    def test_external_installer_passes_signed_bundle_to_transaction_on_copy(self):
+        inspector = lambda *_: {'server_process_seen': False,
+                                'manager_process_seen': False,
+                                'port_8765_listening': False}
+        downloader = Mock(return_value=(self.signed, self.archive, self.manifest))
+        lifecycle_factory = lambda source, launcher, state, manifest, **kwargs: (
+            OfflineFixture(state, [True]))
+        a, b, c = self.prepared()
+        with a, b, c:
+            result = install_from_channel(self.source, self.launcher, self.state,
+                inspector=inspector, downloader=downloader,
+                lifecycle_factory=lifecycle_factory, pinned_key=self.pin)
+        self.assertEqual(result['state'], 'committed')
+        downloader.assert_called_once()
         self.assert_data_preserved()
 
 
