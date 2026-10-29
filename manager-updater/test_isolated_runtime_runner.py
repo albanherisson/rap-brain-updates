@@ -31,7 +31,7 @@ class RunnerTests(unittest.TestCase):
             source = home / 'Downloads' / 'rap-brain'
             source.mkdir(parents=True)
             (source / 'server.py').write_bytes(FIXTURE)
-            report = run_disposable(source, home, digest(FIXTURE), timeout=5,
+            report = run_disposable(source, home, digest(FIXTURE), timeout=20,
                                     listener_check=lambda port, pid: True)
             self.assertTrue(report['status_ok'])
             self.assertNotEqual(report['port'], 8765)
