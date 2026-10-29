@@ -55,6 +55,35 @@ worker_main = _rb_guarded_worker_main_v1
 
 '''
 
+RUNTIME_PROOF = '''# Rap Brain authenticated read-only runtime proof v1.
+_rb_previous_get_proof_v1 = Handler.do_GET
+def _rb_runtime_proof_get_v1(self):
+    if self.path.split('?', 1)[0] != '/api/manager-update-proof':
+        return _rb_previous_get_proof_v1(self)
+    import os as __rb_os
+    import re as __rb_re
+    import secrets as __rb_secrets
+    __rb_token = __rb_os.environ.get('RB_UPDATE_PROBE_TOKEN', '')
+    __rb_supplied = self.headers.get('X-RB-Update-Token', '')
+    if (not __rb_re.fullmatch(r'[0-9a-f]{64}', __rb_token) or
+            not __rb_secrets.compare_digest(__rb_token, __rb_supplied)):
+        return self.send({'error': 'not_found'}, 404)
+    __rb_worker = WORKER_PROCESS
+    with AUDIO_LOCK:
+        __rb_audio = AUDIO_STATE.get('process')
+        __rb_audio_pid = (__rb_audio.pid if __rb_audio is not None and
+                          __rb_audio.poll() is None else None)
+    return self.send({
+        'parent_pid': __rb_os.getpid(),
+        'worker_pid': (__rb_worker.pid if __rb_worker is not None and
+                       __rb_worker.poll() is None else None),
+        'audio_pid': __rb_audio_pid,
+    }, 200)
+
+Handler.do_GET = _rb_runtime_proof_get_v1
+
+'''
+
 
 def prepare_worker_activity(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
     """Prepare the isolated pinned server with HTTP and worker exclusion."""
@@ -70,7 +99,7 @@ def prepare_worker_activity(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
                                               for nodes in functions.values()):
         raise ValueError('unsupported_worker_order')
     lines = source.splitlines(keepends=True)
-    lines.insert(main.lineno - 1, WORKER_GATE)
+    lines.insert(main.lineno - 1, WORKER_GATE + RUNTIME_PROOF)
     output = ''.join(lines).encode('utf-8')
     compile(output, 'server.py', 'exec')
     return output

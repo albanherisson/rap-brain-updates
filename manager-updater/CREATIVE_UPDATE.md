@@ -283,6 +283,11 @@ is idle or enable installation.
 A further isolated `server_worker_resume_candidate.py` wraps `resume_jobs()`
 with the same worker job lock. This closes a gap at worker startup: a resumed
 analysis cannot rewrite job state while a maintenance marker is present.
+It also provides a read-only runtime route protected by a 64-character launch
+token provided by the Manager. The route reports only the parent, worker and
+audio process IDs, and rejects an absent or wrong token. This is one input to
+the future ownership check, not proof that a returned PID is safe to stop;
+the retained launch handle and fresh OS process inventory still have to match.
 Synthetic behavior tests and the redacted AST compilation pass. The earlier
 Mac result applies to the previous byte-identical candidate only; this newer
 variant needs its own read-only Mac compatibility check after the remaining
