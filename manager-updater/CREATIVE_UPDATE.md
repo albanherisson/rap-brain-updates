@@ -638,4 +638,12 @@ bundle/signature test; the GitHub macOS runners have not completed it yet.
 No installer app or bootstrap release is published, and the package itself
 does not carry a publisher signing key or authorize a release.
 
+`mac_disposable_app_signature_probe.py` is an optional owner-Mac rehearsal
+before publication: it authenticates the same immutable read-only preparers,
+copies the already installed Beta 14 app to a temporary directory, verifies
+its original signature, signs the prepared launcher/dashboard in that copy,
+then restores and verifies the copied original. It reads the source hashes
+but does not run the server or open data. This rehearsal has not been run on
+the owner's Mac and must not be described as passed.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
