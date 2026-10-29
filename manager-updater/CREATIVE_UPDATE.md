@@ -523,4 +523,14 @@ prospective lifecycle now waits for an authenticated worker before creating a
 maintenance attempt and retries only a short transient admission-lock conflict
 during cooperative rollback. It never falls back to a raw PID signal.
 
+`bootstrap_transaction.py` now exercises the initial two-file swap on
+disposable copies. It requires a separate offline lifecycle and matching
+private bootstrap intent plus ticket, reuses the mandatory SQLite/config
+backup and restoration drill, journals both file replacements, and restores
+the original server and launcher if candidate health fails. A saved pending
+attempt can resume only with its original identifier. A backup failure before
+either swap restarts the originals. This has no production offline lifecycle,
+no enabled UI request and no signed production release; an incomplete stage
+that cannot be authenticated remains blocked for manual recovery.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
