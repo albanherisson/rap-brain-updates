@@ -1,6 +1,7 @@
 """Restore the complete disposable app, including local code-signature bytes."""
 import os
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -66,6 +67,8 @@ class AppBackupTests(unittest.TestCase):
             save_app_backup(self.app, self.state)
 
     def test_detached_signature_xattr_survives_backup_and_rollback(self):
+        if sys.platform == 'darwin':
+            self.skipTest('real detached codesign integration runs on macOS')
         try:
             os.setxattr(self.native, 'user.rapbrain.signature', b'original')
         except OSError as exc:
