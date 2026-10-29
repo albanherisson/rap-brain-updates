@@ -634,7 +634,7 @@ it must not be treated as an ordinary new installation.
 Python dependency closure into a separate Finder app built with macOS
 `osacompile` and local ad-hoc `codesign`. Its AppleScript UI reports the
 offline refusal in plain French. The app builder has a macOS-only disposable
-bundle/signature test; the GitHub macOS runners have not completed it yet.
+bundle/signature test; it passed in GitHub Actions run 40948958070.
 No installer app or bootstrap release is published, and the package itself
 does not carry a publisher signing key or authorize a release.
 
@@ -644,7 +644,10 @@ copies the already installed Beta 14 app to a temporary directory, verifies
 its original signature, signs the prepared launcher/dashboard in that copy,
 then restores and verifies the copied original. It reads the source hashes
 but does not run the server or open data. This rehearsal has not been run on
-the owner's Mac and must not be described as passed.
+the owner's Mac on October 29, 2026: the candidate copy was signed, then the
+copied original was restored and signature-verified. The original app, server,
+database and running processes were not modified by the probe. This does not
+establish a live installation.
 
 The first owner rehearsal refused at `original_copy_verify`: the active app's
 signature verified, but the copied `RapBrainManagerLegacy` shell launcher lost
@@ -657,6 +660,9 @@ The second owner copy probe refused with `AttributeError`: Python's `os` xattr
 API exists on Linux but is unavailable on macOS. `app_xattrs.py` now uses the
 system `/usr/bin/xattr` hex interface on macOS with bounded output and exact
 binary round trips; the standalone probe uses the same native tool. This fix
-is still pending macOS and owner-copy validation.
+passed macOS CI regression in run 40948958070, including the exact probe copy
+method on a signed shell helper; the subsequent owner copy probe passed too.
+Remaining gates include a real isolated server/runtime rehearsal, a production
+release signed by the existing publisher key, and an offline owner installation.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
