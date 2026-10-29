@@ -20,7 +20,8 @@ from worker_activity_gate import begin_maintenance
 
 SOURCE = b'''import json, os, subprocess, sys, threading, time
 from pathlib import Path
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
+from socketserver import TCPServer
 WORKER_PROCESS = None
 AUDIO_LOCK = threading.Lock()
 AUDIO_STATE = {'process': None}
@@ -56,7 +57,7 @@ if __name__ == '__main__':
         worker_main()
         sys.exit(0)
     threading.Thread(target=supervise_worker, daemon=True).start()
-    server = HTTPServer(('127.0.0.1', 0), Handler)
+    server = TCPServer(('127.0.0.1', 0), Handler)
     print('PORT:' + str(server.server_address[1]), flush=True)
     try:
         server.serve_forever()
