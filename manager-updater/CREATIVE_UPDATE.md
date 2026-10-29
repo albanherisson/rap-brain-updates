@@ -383,4 +383,15 @@ before stopping the exact owned handle. The endpoint is supplied only by the
 isolated guarded server candidate, not the live server. A separate signed
 bootstrap and real Mac lifecycle validation are still required.
 
+`server_graceful_shutdown_candidate.py` prepares a further isolated server
+variant with a token- and ticket-protected stop request. It requires the
+durable marker, an idle worker lock, the retained worker's expected launch
+arguments, and no tracked audio capture before asking the HTTP server to exit
+through `serve_forever().shutdown()`. The existing main `finally` then handles
+its worker. A synthetic handler test checks refusal and the shutdown request;
+it does not prove that the real parent and worker exit cleanly. No stop request
+has been sent to the owner's Mac. An owned-handle client must recheck the OS
+identity, send the request only to that process, wait for both exits, and hold
+the maintenance marker through rollback before this can become an installer.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
