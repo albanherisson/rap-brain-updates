@@ -1,25 +1,31 @@
+from pathlib import Path
+import tempfile
 import unittest
 
 from creative_release import Refused, digest
-from isolated_runtime_port import disposable_port_copy
+from isolated_runtime_port import disposable_environment
+
+
+PORT_DECLARATION = b"import os\nPORT = int(os.getenv('RAP_BRAIN_PORT', '8765'))\n"
 
 
 class IsolatedPortTests(unittest.TestCase):
-    def test_only_disposable_listener_changes(self):
-        original = b'PORT = 8765\nMESSAGE = "8765 stays"\n'
-        result = disposable_port_copy(original, digest(original), 18765)
-        self.assertEqual(result, b'PORT = 18765\nMESSAGE = "8765 stays"\n')
-        self.assertEqual(original, b'PORT = 8765\nMESSAGE = "8765 stays"\n')
+    def test_exact_owner_port_shape_uses_separate_home_and_port(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as home:
+            env = disposable_environment(PORT_DECLARATION, digest(PORT_DECLARATION),
+                                         18765, home)
+            self.assertEqual(env['HOME'], home)
+            self.assertEqual(env['RAP_BRAIN_PORT'], '18765')
+            self.assertEqual(PORT_DECLARATION,
+                             b"import os\nPORT = int(os.getenv('RAP_BRAIN_PORT', '8765'))\n")
 
-    def test_unknown_or_duplicate_declaration_refuses(self):
-        for source in (b'PORT = int("8765")\n', b'PORT = 8765\nPORT = 8765\n',
-                       b'PORT = 8766\n', b'PORT = True\n',
-                       b'PORT = 8765\nOTHER = 8765\n'):
-            with self.subTest(source=source), self.assertRaises(Refused):
-                disposable_port_copy(source, digest(source), 18765)
-
-    def test_source_and_active_port_must_be_pinned(self):
-        original = b'PORT = 8765\n'
-        for expected, port in ((digest(b'other'), 18765), (digest(original), 8765)):
+    def test_unknown_port_or_active_port_refuses(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as home:
+            for source in (b'PORT = 8765\n', b'PORT = int(os.getenv("OTHER", "8765"))\n',
+                           PORT_DECLARATION + PORT_DECLARATION):
+                with self.subTest(source=source), self.assertRaises(Refused):
+                    disposable_environment(source, digest(source), 18765, home)
             with self.assertRaises(Refused):
-                disposable_port_copy(original, expected, port)
+                disposable_environment(PORT_DECLARATION, digest(PORT_DECLARATION), 8765, home)
+            with self.assertRaises(Refused):
+                disposable_environment(PORT_DECLARATION, digest(b'other'), 18765, home)

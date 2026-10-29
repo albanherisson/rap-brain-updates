@@ -1,43 +1,27 @@
-"""Adjust only the listening port of an authenticated disposable server copy.
-
-The original candidate remains byte-for-byte unchanged. An unfamiliar port
-declaration refuses the rehearsal rather than risking the active port.
-"""
+"""Configure the observed owner's server port without changing its code."""
 import ast
+from pathlib import Path
 
 from creative_release import Refused, digest
 
 
-def disposable_port_copy(candidate, expected_sha256, port):
+def disposable_environment(candidate, expected_sha256, port, home):
     if (type(candidate) is not bytes or digest(candidate) != expected_sha256 or
             type(port) is not int or not 1024 <= port <= 65535 or port == 8765):
         raise Refused('isolated_port_input_invalid')
+    home = Path(home).absolute()
+    if (not home.is_dir() or home.is_symlink() or
+            any(parent.is_symlink() for parent in home.parents)):
+        raise Refused('isolated_home_invalid')
     try:
-        source = candidate.decode('utf-8')
-        tree = ast.parse(source)
+        tree = ast.parse(candidate)
     except (UnicodeError, SyntaxError) as exc:
         raise Refused('isolated_server_invalid') from exc
     assignments = [node for node in tree.body if isinstance(node, ast.Assign)
                    and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)
                    and node.targets[0].id == 'PORT']
-    if (len(assignments) != 1 or not isinstance(assignments[0].value, ast.Constant) or
-            type(assignments[0].value.value) is not int or
-            assignments[0].value.value != 8765 or
-            assignments[0].lineno != assignments[0].end_lineno):
+    expected = ast.dump(ast.parse("PORT = int(os.getenv('RAP_BRAIN_PORT', '8765'))").body[0].value)
+    if len(assignments) != 1 or ast.dump(assignments[0].value) != expected:
         raise Refused('isolated_port_declaration_unknown')
-    declaration = assignments[0]
-    # A second hard-coded reference could still send a worker or a health
-    # request to the live port. Refuse until that use is understood.
-    if any(node is not declaration.value and isinstance(node, ast.Constant) and
-           type(node.value) is int and node.value == 8765
-           for node in ast.walk(tree)):
-        raise Refused('isolated_port_other_reference')
-    lines = source.splitlines(keepends=True)
-    line = lines[declaration.lineno - 1]
-    start, end = declaration.value.col_offset, declaration.value.end_col_offset
-    if line[start:end] != '8765':
-        raise Refused('isolated_port_layout_unknown')
-    lines[declaration.lineno - 1] = line[:start] + str(port) + line[end:]
-    output = ''.join(lines).encode('utf-8')
-    compile(output, 'server.py', 'exec')
-    return output
+    return {'HOME': str(home), 'RAP_BRAIN_PORT': str(port),
+            'PYTHONDONTWRITEBYTECODE': '1'}
