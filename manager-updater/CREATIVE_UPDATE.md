@@ -252,4 +252,14 @@ removed by this primitive; only a future reviewed transaction/recovery owner
 may clear it after a terminal journal. This module is not yet inserted into
 the Mac server or connected to Beta 14, so no live worker exclusion is claimed.
 
+`server_worker_activity_candidate.prepare_worker_activity()` now prepares an additional
+isolated server candidate: it wraps `job_runner` with the same job lock and
+marker check, and makes a newly started worker wait before `init()` and
+`resume_jobs()` while maintenance is pending. Its AST shape compiles against
+the owner's redacted server structure and its behavior passes a synthetic
+server fixture. Since that redacted structure is intentionally non-executable,
+this is still not validation of the unredacted candidate on the owner's Mac.
+The existing prepared candidate and read-only Mac probe remain unchanged;
+this new source variant is not installed or distributed.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
