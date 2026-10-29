@@ -13,6 +13,7 @@ import stat
 from bootstrap_full_release import FILES, PRIMARY, verify_full_bootstrap
 from bootstrap_release import PUBLISHER_PIN
 from bootstrap_transaction import BootstrapTransaction, TERMINAL
+from app_bundle_backup import read_app_backup, restore_app_backup, save_app_backup
 from creative_release import Refused, digest
 from creative_transaction import Transaction, atomic_write, fsync_dir, safe_path
 from strict_json import parse_signed_json
@@ -40,6 +41,12 @@ class FullBootstrapTransaction(BootstrapTransaction):
         manifest, files = verify_full_bootstrap(raw,
             safe_path(folder / 'full-release.zip').read_bytes(),
             *(originals[name] for name in PRIMARY), pinned_key=self.pin, now=issued)
+        app_snapshot = read_app_backup(folder)
+        for name in PRIMARY[1:]:
+            key = 'Contents/Resources/' + name
+            if (key not in app_snapshot or
+                    app_snapshot[key]['sha256'] != digest(originals[name])):
+                raise Refused('bootstrap_app_backup_baseline_changed')
         return manifest, files, originals
 
     def _backup_full(self, folder, raw, archive, originals):
@@ -47,6 +54,7 @@ class FullBootstrapTransaction(BootstrapTransaction):
             atomic_write(folder / ('before-' + name), originals[name])
         atomic_write(folder / 'full-release.json', raw)
         atomic_write(folder / 'full-release.zip', archive)
+        save_app_backup(self.resources.parents[1], folder)
         Transaction(self.source, self.state, self.lifecycle).backup(
             folder, safe_path(self.source / 'creative_engine.py').read_bytes())
         fsync_dir(folder)
@@ -77,16 +85,11 @@ class FullBootstrapTransaction(BootstrapTransaction):
             atomic_write(self.paths[name], files[name], modes[name])
             lease.assert_stopped()
 
-    def _restore_full(self, originals, files, modes):
-        for name in PRIMARY:
-            atomic_write(self.paths[name], originals[name], modes[name])
-        for name in FILES[3:]:
-            path = self.paths[name]
-            if os.path.lexists(path):
-                if digest(safe_path(path).read_bytes()) != digest(files[name]):
-                    raise Refused('bootstrap_unexpected_live_runtime_preserved')
-                path.unlink()
-        fsync_dir(self.resources)
+    def _restore_full(self, folder, originals, files, modes):
+        atomic_write(self.server, originals['server.py'], modes['server.py'])
+        restore_app_backup(self.resources.parents[1], folder,
+            allowed_extra=tuple('Contents/Resources/' + name for name in FILES[3:]) +
+                          ('Contents/_CodeSignature/CodeResources',))
 
     def _rollback_full(self, record, folder, lease):
         lease.stop_candidate()
@@ -94,7 +97,7 @@ class FullBootstrapTransaction(BootstrapTransaction):
         manifest, files, originals = self._verify_saved_full(folder)
         self._assert_known_code(manifest, files, originals)
         self.record(record, 'rollback_pending')
-        self._restore_full(originals, files, record['modes'])
+        self._restore_full(folder, originals, files, record['modes'])
         if (any(digest(safe_path(self.paths[name]).read_bytes()) != digest(originals[name])
                 for name in PRIMARY) or
                 any(os.path.lexists(self.paths[name]) for name in FILES[3:])):

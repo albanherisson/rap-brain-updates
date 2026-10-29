@@ -31,8 +31,17 @@ class FullTransactionTests(unittest.TestCase):
         self.source = root / 'source'
         data = self.source / 'data'
         data.mkdir(parents=True)
-        self.resources = root / 'app'
-        self.resources.mkdir()
+        self.app = root / 'Rap Brain Manager Beta 14.app'
+        self.resources = self.app / 'Contents' / 'Resources'
+        self.resources.mkdir(parents=True)
+        executable = self.app / 'Contents' / 'MacOS' / 'RapBrainManagerLegacy'
+        executable.parent.mkdir()
+        executable.write_bytes(b'original native launcher and signature')
+        signature = self.app / 'Contents' / '_CodeSignature' / 'CodeResources'
+        signature.parent.mkdir()
+        signature.write_bytes(b'original ad hoc signature')
+        self.original_bundle = {executable.relative_to(self.app): executable.read_bytes(),
+                                signature.relative_to(self.app): signature.read_bytes()}
         self.launcher = self.resources / 'launch_manager.py'
         self.before = {'server.py': b'original server\n',
                        'launch_manager.py': b'original launcher\n',
@@ -92,6 +101,10 @@ class FullTransactionTests(unittest.TestCase):
         self.assertEqual(self.saved_data, {p.name: p.read_bytes()
                          for p in (self.source / 'data').iterdir()})
 
+    def assert_app_signature_preserved(self):
+        for name, raw in self.original_bundle.items():
+            self.assertEqual((self.app / name).read_bytes(), raw)
+
     def test_signed_commit_installs_all_resources_without_data_changes(self):
         a, b, c = self.prepared()
         with a, b, c:
@@ -101,6 +114,7 @@ class FullTransactionTests(unittest.TestCase):
             path = self.source / name if name == 'server.py' else self.resources / name
             self.assertEqual(path.read_bytes(), self.after[name])
         self.assert_data_preserved()
+        self.assert_app_signature_preserved()
 
     def test_failed_health_restores_originals_and_removes_runtime(self):
         a, b, c = self.prepared()
@@ -113,6 +127,7 @@ class FullTransactionTests(unittest.TestCase):
         for name in RUNTIME_FILES:
             self.assertFalse((self.resources / name).exists())
         self.assert_data_preserved()
+        self.assert_app_signature_preserved()
 
     def test_recovery_after_partial_switch_restores_original_pair_and_resources(self):
         self.test_signed_commit_installs_all_resources_without_data_changes()
@@ -134,6 +149,7 @@ class FullTransactionTests(unittest.TestCase):
         self.assertEqual(self.launcher.read_bytes(), self.before['launch_manager.py'])
         self.assertFalse(any((self.resources / name).exists() for name in RUNTIME_FILES))
         self.assert_data_preserved()
+        self.assert_app_signature_preserved()
 
 
 if __name__ == '__main__':

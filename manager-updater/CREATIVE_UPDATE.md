@@ -576,6 +576,14 @@ all data-folder bytes remain unchanged. The offline first-bootstrap lifecycle
 still needs to prove the old app/server stopped and to re-sign and validate
 the modified macOS app. No production release or live installation exists.
 
+The full bootstrap now also saves the complete stopped `.app` before a swap,
+checks every file digest and mode, and drills a separate restoration. On
+rollback it restores the app executable and its local code-signature resources
+from that private copy, while refusing any unexpected new file. This protects
+the exact original app if a later local re-sign changes more than the dashboard
+and launcher. Copy-only tests simulate a changed native executable/signature;
+the actual macOS signing and offline lifecycle remain unvalidated.
+
 The consolidated `mac_final_readonly_probe.py` is prepared for the owner Mac.
 It reads only the three pinned code/UI baselines, downloads hash-pinned public
 preparers from one immutable GitHub commit, compiles the final candidates in
