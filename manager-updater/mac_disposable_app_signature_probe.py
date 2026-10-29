@@ -32,6 +32,28 @@ def digest(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def xattr(args, cap):
+    result = subprocess.run(['/usr/bin/xattr', *args], capture_output=True,
+                            timeout=10, stdin=subprocess.DEVNULL)
+    if result.returncode != 0 or len(result.stdout) > cap:
+        raise ValueError('mac_xattr_refused')
+    return result.stdout
+
+
+def read_xattrs(path):
+    names = xattr([str(path)], 8000).decode('utf-8').splitlines()
+    if len(names) > 32 or len(names) != len(set(names)):
+        raise ValueError('mac_xattr_names_invalid')
+    values = {}
+    for name in names:
+        raw = xattr(['-px', name, str(path)], 300000)
+        value = bytes.fromhex(raw.decode('ascii'))
+        if len(value) > 100000:
+            raise ValueError('mac_xattr_value_limit')
+        values[name] = value
+    return values
+
+
 def load_pinned_probe():
     with urllib.request.urlopen(PROBE_URL, timeout=20) as response:
         raw = response.read(250001)
@@ -58,11 +80,7 @@ def inventory(app):
             raw = path.read_bytes()
             total += len(raw)
             attrs = {}
-            names = os.listxattr(path, follow_symlinks=False)
-            if len(names) > 32:
-                raise ValueError('app_xattr_limit')
-            for attr in names:
-                value = os.getxattr(path, attr, follow_symlinks=False)
+            for attr, value in read_xattrs(path).items():
                 xattr_total += len(value)
                 attrs[attr] = digest(value)
             if (len(result) >= 1000 or total > 100_000_000 or
@@ -99,10 +117,8 @@ def copy_file_without_system_flags(source, target):
     """Preserve detached script signatures, without restricted system flags."""
     shutil.copyfile(source, target)
     Path(target).chmod(stat.S_IMODE(Path(source).stat().st_mode))
-    for name in os.listxattr(source, follow_symlinks=False):
-        os.setxattr(target, name,
-                    os.getxattr(source, name, follow_symlinks=False),
-                    follow_symlinks=False)
+    for name, value in read_xattrs(source).items():
+        xattr(['-wx', name, value.hex(), str(target)], 100)
     return target
 
 

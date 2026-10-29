@@ -653,5 +653,10 @@ restoration now also record and restore bounded file extended attributes;
 the disposable Mac probe preserves them as well. Linux tests check metadata
 round trips, and a macOS fixture signs a shell helper to exercise detached
 metadata. Actual owner copy validation must be repeated before installation.
+The second owner copy probe refused with `AttributeError`: Python's `os` xattr
+API exists on Linux but is unavailable on macOS. `app_xattrs.py` now uses the
+system `/usr/bin/xattr` hex interface on macOS with bounded output and exact
+binary round trips; the standalone probe uses the same native tool. This fix
+is still pending macOS and owner-copy validation.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

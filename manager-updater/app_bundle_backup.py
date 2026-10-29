@@ -15,6 +15,7 @@ import tempfile
 
 from creative_release import Refused
 from creative_transaction import atomic_write, fsync_dir, safe_path
+from app_xattrs import MAX_ATTR, get_attr, list_attrs, set_attr
 
 
 MAX_FILES = 1000
@@ -24,7 +25,7 @@ MAX_XATTR_BYTES = 1_000_000
 
 def file_xattrs(path):
     """Preserve detached signatures on script executables as well as bytes."""
-    names = os.listxattr(path, follow_symlinks=False)
+    names = list_attrs(path)
     if len(names) > 32:
         raise Refused('app_bundle_xattr_limit')
     result = {}
@@ -32,8 +33,8 @@ def file_xattrs(path):
         if not isinstance(name, str) or not 0 < len(name) <= 200 or not all(
                 32 <= ord(c) < 127 for c in name):
             raise Refused('app_bundle_xattr_name')
-        value = os.getxattr(path, name, follow_symlinks=False)
-        if len(value) > 250_000:
+        value = get_attr(path, name)
+        if len(value) > MAX_ATTR:
             raise Refused('app_bundle_xattr_limit')
         result[name] = base64.b64encode(value).decode('ascii')
     return result
@@ -41,8 +42,7 @@ def file_xattrs(path):
 
 def restore_xattrs(path, encoded):
     for name, value in encoded.items():
-        os.setxattr(path, name, base64.b64decode(value, validate=True),
-                    follow_symlinks=False)
+        set_attr(path, name, base64.b64decode(value, validate=True))
 
 
 def inventory(app):
@@ -148,13 +148,13 @@ def read_app_backup(folder):
         for attr_name, value in entry['xattrs'].items():
             if (type(attr_name) is not str or not 0 < len(attr_name) <= 200 or
                     not all(32 <= ord(c) < 127 for c in attr_name) or
-                    type(value) is not str or len(value) > 333_336):
+                    type(value) is not str or len(value) > 133_336):
                 raise Refused('app_backup_manifest_invalid')
             try:
                 decoded = base64.b64decode(value, validate=True)
             except (ValueError, binascii.Error) as exc:
                 raise Refused('app_backup_manifest_invalid') from exc
-            if len(decoded) > 250_000:
+            if len(decoded) > MAX_ATTR:
                 raise Refused('app_backup_manifest_invalid')
             xattr_total += len(decoded)
     if total > MAX_BYTES or xattr_total > MAX_XATTR_BYTES:
