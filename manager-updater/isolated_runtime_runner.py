@@ -50,6 +50,7 @@ def run_disposable(source, home, expected_sha256, *, port=None, timeout=15,
                              start_new_session=True)
     try:
         deadline = time.monotonic() + timeout
+        last_error = 'none'
         while time.monotonic() < deadline:
             if child.poll() is not None:
                 raise Refused('isolated_server_exited')
@@ -71,8 +72,9 @@ def run_disposable(source, home, expected_sha256, *, port=None, timeout=15,
             except (OSError, http.client.HTTPException, Refused) as exc:
                 if isinstance(exc, Refused) and str(exc) not in ('listener_identity_unavailable',):
                     raise
+                last_error = type(exc).__name__ + ':' + str(getattr(exc, 'errno', ''))
                 time.sleep(0.1)
-        raise Refused('isolated_status_timeout')
+        raise Refused('isolated_status_timeout_' + last_error)
     finally:
         # start_new_session gives this child a distinct process group. The
         # retained Popen handle must still identify its leader before killpg.
