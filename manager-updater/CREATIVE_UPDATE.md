@@ -665,4 +665,13 @@ method on a signed shell helper; the subsequent owner copy probe passed too.
 Remaining gates include a real isolated server/runtime rehearsal, a production
 release signed by the existing publisher key, and an offline owner installation.
 
+The next runtime rehearsal must run from a disposable copy under a temporary
+`HOME`, with a temporary `Downloads/rap-brain/data` and private update state.
+It must use a free loopback port distinct from the active server, prove that
+the worker and shutdown paths terminate, and compare active source/app hashes
+before and after. Do not launch the prepared candidate directly from the
+owner's active source tree: its startup paths derive from `Path.home()` and
+could otherwise reach the owner's data or update markers. A failure of the
+isolated rehearsal cannot be promoted into a signed production claim.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
