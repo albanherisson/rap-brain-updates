@@ -319,6 +319,12 @@ The token is never included in the launch report. The exact owner archive
 compiles in a disposable local copy; a synthetic spawn test verifies token
 handoff without starting Rap Brain. No installed or signed Manager release
 exists for this candidate.
+`beta14_owned_identity_candidate.py` builds on that same isolated launcher
+copy and records the exact `server.py` hash and OS start timestamp at the
+moment its retained `Popen` child is created. A failed OS query leaves the
+timestamp absent, which must disable a future updater while preserving the
+ordinary launch. Synthetic spawn tests and compilation of the exact archived
+Beta 14 source pass. The Mac app has not received this candidate.
 
 ## Remaining transaction handoff blocker
 
