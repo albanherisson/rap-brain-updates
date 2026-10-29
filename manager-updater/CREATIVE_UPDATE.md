@@ -273,7 +273,11 @@ compatibility check for that variant. It reads the known live `server.py`,
 verifies the original SHA-256, fetches only the two public preparers at a fixed
 commit with independent SHA-256 pins, and compiles the new candidate entirely
 in memory. It does not import/execute the server or read data, config or keys.
-A successful output would establish source compatibility only; it cannot prove
-the running worker is idle or enable installation.
+On 29 October 2026 the owner ran this check on the Mac. It recognized the
+original active source and compiled the worker-gated candidate in memory with
+SHA-256 `faea0a686f5cb008a906b680d5e3cbdcd4b9fef3b60eb1e9a0769ef2f4fca925`.
+The output reported no active file modified, database opened or server started.
+This establishes source compatibility only; it cannot prove the running worker
+is idle or enable installation.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
