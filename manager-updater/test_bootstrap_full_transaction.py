@@ -16,7 +16,8 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from bootstrap_full_release import FILES, PRIMARY
 from bootstrap_full_transaction import FullBootstrapTransaction
 from bootstrap_runtime_resources import RUNTIME_FILES
-from creative_release import canonical, digest
+from creative_release import Refused, canonical, digest
+from offline_bootstrap_lifecycle import MacOfflineBootstrapLifecycle
 from test_bootstrap_transaction import OfflineFixture, IDENTIFIER
 
 
@@ -80,6 +81,7 @@ class FullTransactionTests(unittest.TestCase):
         for kind, path in zip(('server', 'launcher', 'dashboard'), PRIMARY):
             manifest['baseline_' + kind + '_sha256'] = digest(self.before[path])
             manifest['candidate_' + kind + '_sha256'] = digest(self.after[path])
+        self.manifest = manifest
         self.signed = canonical({'signed_payload': manifest,
             'signature_algorithm': 'Ed25519',
             'signature_base64': base64.b64encode(key.sign(canonical(manifest))).decode(),
@@ -150,6 +152,107 @@ class FullTransactionTests(unittest.TestCase):
         self.assertFalse(any((self.resources / name).exists() for name in RUNTIME_FILES))
         self.assert_data_preserved()
         self.assert_app_signature_preserved()
+
+    def test_offline_lifecycle_clears_ticket_only_after_terminal_commit(self):
+        class ExitedCandidate:
+            def poll(self):
+                return 0
+
+        class Candidate:
+            def __init__(self, *_args, **_kwargs):
+                self.lock = None
+                self.current = None
+
+            def start_and_check(self):
+                self.lock.release_to_ticketed_candidate()
+                self.current = ExitedCandidate()
+                return True
+
+        inspector = lambda *_: {'server_process_seen': False,
+                                'manager_process_seen': False,
+                                'port_8765_listening': False}
+        signer = lambda *_args, **_kwargs: True
+        lifecycle = MacOfflineBootstrapLifecycle(self.source, self.launcher,
+            self.state, self.manifest, inspector=inspector, signer=signer,
+            candidate_factory=Candidate)
+        tx = FullBootstrapTransaction(self.source, self.launcher, self.state,
+                                      lifecycle, pinned_key=self.pin)
+        a, b, c = self.prepared()
+        with a, b, c:
+            result = tx.install(self.signed, self.archive)
+        self.assertEqual(result['state'], 'committed')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertFalse((self.state / 'bootstrap-intent.json').exists())
+        self.assert_data_preserved()
+
+    def test_offline_lifecycle_restores_original_and_clears_ticket_on_failed_health(self):
+        class Candidate:
+            def __init__(self, *_args, **_kwargs):
+                self.lock = None
+                self.current = None
+
+            def start_and_check(self):
+                self.lock.release_to_ticketed_candidate()
+                self.current = type('Exited', (), {'poll': lambda self: 1})()
+                return False
+
+        inspector = lambda *_: {'server_process_seen': False,
+                                'manager_process_seen': False,
+                                'port_8765_listening': False}
+        lifecycle = MacOfflineBootstrapLifecycle(self.source, self.launcher,
+            self.state, self.manifest, inspector=inspector,
+            signer=lambda *_a, **_k: True,
+            restored_verifier=lambda *_a, **_k: True,
+            candidate_factory=Candidate)
+        tx = FullBootstrapTransaction(self.source, self.launcher, self.state,
+                                      lifecycle, pinned_key=self.pin)
+        a, b, c = self.prepared()
+        with a, b, c:
+            result = tx.install(self.signed, self.archive)
+        self.assertEqual(result['state'], 'restored_stopped')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
+        self.assertEqual(self.launcher.read_bytes(), self.before['launch_manager.py'])
+        self.assert_app_signature_preserved()
+        self.assert_data_preserved()
+
+    def test_active_owner_mac_state_refuses_before_attempt(self):
+        inspector = lambda *_: {'server_process_seen': True,
+                                'manager_process_seen': True,
+                                'port_8765_listening': True}
+        lifecycle = MacOfflineBootstrapLifecycle(self.source, self.launcher,
+            self.state, self.manifest, inspector=inspector,
+            signer=lambda *_a, **_k: True)
+        tx = FullBootstrapTransaction(self.source, self.launcher, self.state,
+                                      lifecycle, pinned_key=self.pin)
+        a, b, c = self.prepared()
+        with a, b, c:
+            with self.assertRaisesRegex(ValueError, 'still_running'):
+                tx.install(self.signed, self.archive)
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
+        self.assert_data_preserved()
+
+    def test_backup_failure_before_any_swap_clears_verified_original_attempt(self):
+        inspector = lambda *_: {'server_process_seen': False,
+                                'manager_process_seen': False,
+                                'port_8765_listening': False}
+        lifecycle = MacOfflineBootstrapLifecycle(self.source, self.launcher,
+            self.state, self.manifest, inspector=inspector,
+            unchanged_verifier=lambda *_a, **_k: True)
+        tx = FullBootstrapTransaction(self.source, self.launcher, self.state,
+                                      lifecycle, pinned_key=self.pin)
+        a, b, c = self.prepared()
+        with a, b, c, patch('bootstrap_full_transaction.save_app_backup',
+                           side_effect=Refused('app_backup_failed')):
+            with self.assertRaisesRegex(Refused, 'app_backup_failed'):
+                tx.install(self.signed, self.archive)
+        self.assertEqual(json.loads((self.state / 'bootstrap-transaction.json').read_text())
+                         ['phase'], 'restored_stopped')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertEqual((self.source / 'server.py').read_bytes(), self.before['server.py'])
+        self.assert_app_signature_preserved()
+        self.assert_data_preserved()
 
 
 if __name__ == '__main__':

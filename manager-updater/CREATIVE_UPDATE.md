@@ -592,4 +592,25 @@ It does not open the database/config/private key, stop processes or write to
 the installation. Its coarse process census is diagnostic evidence, not yet a
 safe offline lifecycle or authorization for installation.
 
+On 29 October 2026 the owner reran the corrected probe on the Mac. It
+recognized the original live server, Beta 14 launcher and dashboard and
+compiled the final candidate hashes `e7947990aec65830375b5e5e5fb6241f0161ead56309c970a8cc7c0970e56f27`,
+`79130fbb4c0404c271c83242718945258e0f0dd8616cad61fb890228672dd2e4`,
+and `43647e2449d4b7bfd6924502e728e8cf8bb5ebc0f7333d56d7e85bb0bbed1cb2`.
+The server, Manager and port 8765 were all active. The probe did not stop
+anything or access SQLite. The first earlier run refused an indentation in
+the new recovery wrapper; that wrapper now derives the original indentation.
+
+The first external bootstrap gate refuses those observed active conditions.
+It never sends a signal to the old unguarded server. The copy transaction now
+also backs up the complete `.app`, including its native executable and local
+code signature, drills its restoration, and restores that exact app on failed
+health. `offline_bootstrap_lifecycle.py` joins a private intent/ticket, an
+exclusive lifetime lock, repeated offline process checks, local app signing,
+ticketed owned candidate health, and terminal marker removal. A restored
+original remains stopped and its existing app signature is checked without
+re-signing. This lifecycle passes disposable fixtures, but its actual Mac
+stop/restart, process census, code-signing and crash recovery are not yet
+owner-validated; no production installer calls it and no release is signed.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
