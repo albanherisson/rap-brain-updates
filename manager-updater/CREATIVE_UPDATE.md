@@ -329,6 +329,12 @@ before the marker, then implement authenticated recovery of this pre-journal
 window. This must be drilled with a killed updater process before enabling any
 real stop or UI install button. The new runtime token and OS readers are still
 independent safety components; they have not closed this handoff gap.
+`mac_combined_readonly_probe.py` batches the next source compatibility check
+into one owner action. It pins four public preparer hashes to a fixed commit,
+reads only the original active server and Beta 14 launcher after checking
+their known digests, and compiles the current guarded candidates in memory.
+It prints only two candidate hashes. Passing it still cannot authorize a real
+stop, bootstrap or installation; the durable pre-journal handoff remains open.
 Synthetic behavior tests and the redacted AST compilation pass. The earlier
 Mac result applies to the previous byte-identical candidate only; this newer
 variant needs its own read-only Mac compatibility check after the remaining
