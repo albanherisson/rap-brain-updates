@@ -567,8 +567,13 @@ the patched Beta 14 launcher and dashboard, all 17 transitive Python modules
 used by the install controller, and the CryptoKit Swift verifier in one signed
 archive. `bootstrap_full_release.py` validates an exact member list and each
 signed digest before any extraction. This supersedes the earlier two-file
-prototype as the intended release format. A full multi-file transaction and
-offline first-bootstrap lifecycle still need implementation and Mac validation;
-the verifier alone cannot install an update.
+prototype as the intended release format. `bootstrap_full_transaction.py`
+backs up the exact server, launcher and dashboard plus SQLite/config, drills
+a separate SQLite/config restoration, journals every swap, and restores the
+original code while removing the installed runtime if health fails. Disposable
+tests cover commit, failed-health rollback and an interrupted partial switch;
+all data-folder bytes remain unchanged. The offline first-bootstrap lifecycle
+still needs to prove the old app/server stopped and to re-sign and validate
+the modified macOS app. No production release or live installation exists.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
