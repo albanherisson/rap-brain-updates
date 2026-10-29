@@ -13,6 +13,10 @@ from creative_readiness import TERMINAL
 class RuntimeProof:
     parent_pid: int
     worker_pid: int
+    parent_start_token: str
+    worker_start_token: str
+    parent_script_sha256: str
+    worker_script_sha256: str
     audio_pid: int | None
     process_group_pids: frozenset[int]
     authenticated_parent: bool
@@ -25,7 +29,8 @@ class RuntimeProof:
     job_status_counts: dict[str, int]
 
 
-def assert_safe_to_stop(proof: RuntimeProof, *, owned_pid: int):
+def assert_safe_to_stop(proof: RuntimeProof, *, owned_pid: int,
+                        owned_start_token: str, expected_server_sha256: str):
     if not isinstance(proof, RuntimeProof):
         raise Refused('runtime_proof_required')
     if (type(owned_pid) is not int or owned_pid < 2 or
@@ -38,6 +43,22 @@ def assert_safe_to_stop(proof: RuntimeProof, *, owned_pid: int):
             proof.worker_same_script is not True or
             proof.worker_idle_verified is not True):
         raise Refused('process_ownership_unverified')
+    # The retained Popen PID alone cannot distinguish a reused PID. The
+    # start token must come from the OS for that exact handle and be compared
+    # with a fresh OS inventory immediately before the signal. The worker
+    # must run the same pinned server source as its parent.
+    if (type(owned_start_token) is not str or not owned_start_token or
+            type(proof.parent_start_token) is not str or
+            proof.parent_start_token != owned_start_token or
+            type(proof.worker_start_token) is not str or not proof.worker_start_token or
+            proof.worker_start_token == proof.parent_start_token):
+        raise Refused('process_start_identity_changed')
+    if (type(expected_server_sha256) is not str or
+            len(expected_server_sha256) != 64 or
+            any(c not in '0123456789abcdef' for c in expected_server_sha256) or
+            proof.parent_script_sha256 != expected_server_sha256 or
+            proof.worker_script_sha256 != expected_server_sha256):
+        raise Refused('server_script_identity_changed')
     if proof.admission_marker_held is not True or proof.http_requests_drained is not True:
         raise Refused('admission_not_quiescent')
     if proof.audio_idle_verified is not True or proof.audio_pid is not None:

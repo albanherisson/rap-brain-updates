@@ -234,6 +234,11 @@ boundary without signaling a process. It requires the exact retained Manager
 process handle, an authenticated parent/worker identity, verified worker and
 audio idle states, a drained HTTP gate and durable marker, only terminal job
 states, and a server process group containing exactly the parent and worker.
+It also compares a fresh OS start token for the owned parent with the token
+recorded at launch, and requires both parent and worker to execute the exact
+pinned server source. The future collector must obtain these values from OS
+process metadata immediately before signaling; a bare PID or copied Boolean
+is insufficient.
 Unknown or extra processes refuse shutdown. These are requirements for a
 future evidence collector; no such authenticated runtime proof has been
 collected on the owner's Mac, and this policy does not enable stopping it.
