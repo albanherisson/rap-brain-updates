@@ -552,4 +552,14 @@ current two-file bootstrap does not bundle this module or its dependencies.
 The signed first bootstrap must ship those resources and the Swift verifier
 before any real installation button is enabled.
 
+`beta14_one_click_candidate.py` prepares a further pinned copy of the Beta 14
+launcher and dashboard. Its localhost HTTP child authenticates the click and
+records a request; the parent that retains the original server handle calls
+the controller and exposes the terminal result. The patched archived app
+passes its disposable smoke test, including rejection of an unauthenticated
+install POST, and a request-handler fixture proves the parent dispatch. This
+is a candidate only: the two-file bootstrap verifier does not accept this
+launcher/dashboard pair, updater modules are not bundled, no button is active
+on the owner's Mac, and a production Creative release has not been published.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
