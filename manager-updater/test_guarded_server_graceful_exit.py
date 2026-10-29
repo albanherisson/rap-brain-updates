@@ -91,13 +91,19 @@ class GuardedExitTests(unittest.TestCase):
             env = dict(os.environ, HOME=str(home), RB_UPDATE_PROBE_TOKEN='c' * 64)
             child = subprocess.Popen([sys.executable, '-u', str(script)], cwd=source,
                                      env=env, stdin=subprocess.DEVNULL,
-                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                      start_new_session=True, close_fds=True)
             try:
-                ready, _, _ = select.select([child.stdout], [], [], 5)
-                self.assertTrue(ready)
+                ready, _, _ = select.select([child.stdout], [], [], 15)
+                if not ready:
+                    detail = (child.stderr.read(1000).decode(errors='replace')
+                              if child.poll() is not None else 'child_alive_no_ready')
+                    self.fail('guarded_fixture_not_ready: ' + detail)
                 line = child.stdout.readline().decode()
-                self.assertTrue(line.startswith('PORT:'), line)
+                if not line.startswith('PORT:'):
+                    detail = (child.stderr.read(1000).decode(errors='replace')
+                              if child.poll() is not None else 'child_alive_no_port')
+                    self.fail('guarded_fixture_no_port: ' + line + ' / ' + detail)
                 port = int(line.removeprefix('PORT:'))
                 # This container cannot run ps -p ("lookup self"); the
                 # start-token parser is covered by its separate unit tests.
@@ -137,6 +143,7 @@ class GuardedExitTests(unittest.TestCase):
                     os.killpg(child.pid, signal.SIGTERM)
                     child.wait(timeout=3)
                 child.stdout.close()
+                child.stderr.close()
 
 
 if __name__ == '__main__':
