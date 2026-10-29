@@ -439,5 +439,10 @@ restarts the old code after a failed candidate. OS process start and process
 group collectors are substituted in this sandbox and remain unvalidated on the
 owner's Mac. The release signer is ephemeral test-only, not the production key.
 This drill is not a production Manager lifecycle adapter or an enabled UI button.
+The transaction itself now refuses a new signed installation if either a
+maintenance ticket or pre-journal intent remains, even when the last journal
+looks terminal. This closes an unsafe path where an incomplete older attempt
+could otherwise reach the next install through a permissive lifecycle fixture.
+Explicit verified recovery is still required to clear such artifacts.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

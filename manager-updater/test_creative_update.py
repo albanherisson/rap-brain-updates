@@ -333,6 +333,26 @@ if __name__ == '__main__':
             self.transaction(lease).install(self.signed(), self.archive)
         self.assertFalse((self.root / 'state' / 'transaction.json').exists())
 
+    def test_stale_maintenance_artifacts_block_new_signed_install(self):
+        state = self.root / 'state'
+        state.mkdir(mode=0o700)
+        for name in ('maintenance.ticket', 'maintenance-intent.json'):
+            artifact = state / name
+            artifact.write_bytes(b'incomplete previous attempt')
+            with self.subTest(name=name), self.assertRaisesRegex(
+                    Refused, 'maintenance_recovery_required'):
+                self.transaction(FixtureLifecycle()).install(self.signed(), self.archive)
+            self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
+            self.assertFalse((state / 'transaction.json').exists())
+            artifact.unlink()
+        (state / 'transaction.json').write_text(json.dumps({
+            'source': str(self.source), 'phase': 'committed',
+            'mode': 0o644, 'id': 'c' * 32, 'sequence': 0}))
+        (state / 'maintenance.ticket').write_bytes(b'pending old ticket')
+        with self.assertRaisesRegex(Refused, 'maintenance_recovery_required'):
+            self.transaction(FixtureLifecycle()).install(self.signed(), self.archive)
+        self.assertEqual(self.data_snapshot(), self.original_data)
+
     def test_queued_and_running_jobs_block_install(self):
         for status in ('queued', 'pending', 'retry', 'interrupted', 'running', 'unexpected'):
             with self.subTest(status=status):

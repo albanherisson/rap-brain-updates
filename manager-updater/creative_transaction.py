@@ -219,6 +219,12 @@ class Transaction:
             recovered = self.recover_locked()
             if recovered:
                 return recovered  # Recovery is never followed by a hidden second install.
+            # A terminal/absent journal alone does not prove that a crashed
+            # pre-journal maintenance attempt has been cleared. Never start a
+            # second install while either durable exclusion artifact remains.
+            if (os.path.lexists(self.state / 'maintenance.ticket') or
+                    os.path.lexists(self.state / 'maintenance-intent.json')):
+                raise Refused('maintenance_recovery_required')
             receipt = self.state / 'accepted.json'
             minimum = read_json(receipt)['sequence'] if receipt.exists() else 0
             # A crash between commit and receipt must not permit sequence replay.
