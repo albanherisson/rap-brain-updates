@@ -61,13 +61,21 @@ class FullBootstrapTransaction(BootstrapTransaction):
             if os.path.lexists(path) and digest(safe_path(path).read_bytes()) != digest(files[name]):
                 raise Refused('bootstrap_unexpected_live_runtime_preserved')
 
-    def _replace_full(self, files, modes):
+    def _replace_full(self, files, modes, lease):
+        # Put the guarded server in place first. From this point an unrelated
+        # fresh server launch sees the private ticket and refuses before DB
+        # access. Recheck the offline proof after every replacement.
+        lease.assert_stopped()
+        atomic_write(self.server, files['server.py'], modes['server.py'])
+        lease.assert_stopped()
         for name in FILES[3:]:
             if os.path.lexists(self.paths[name]):
                 raise Refused('bootstrap_runtime_already_present')
             atomic_write(self.paths[name], files[name], 0o600)
-        for name in PRIMARY:
+            lease.assert_stopped()
+        for name in PRIMARY[1:]:
             atomic_write(self.paths[name], files[name], modes[name])
+            lease.assert_stopped()
 
     def _restore_full(self, originals, files, modes):
         for name in PRIMARY:
@@ -194,7 +202,7 @@ class FullBootstrapTransaction(BootstrapTransaction):
                     self.record(record, 'backup_ready')
                     self._assert_excluded(lease)
                     self.record(record, 'switch_pending')
-                    self._replace_full(files, modes)
+                    self._replace_full(files, modes, lease)
                     self.record(record, 'switched')
                     if not lease.start_and_check():
                         raise Refused('bootstrap_health_failed')

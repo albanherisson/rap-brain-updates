@@ -576,4 +576,12 @@ all data-folder bytes remain unchanged. The offline first-bootstrap lifecycle
 still needs to prove the old app/server stopped and to re-sign and validate
 the modified macOS app. No production release or live installation exists.
 
+The consolidated `mac_final_readonly_probe.py` is prepared for the owner Mac.
+It reads only the three pinned code/UI baselines, downloads hash-pinned public
+preparers from one immutable GitHub commit, compiles the final candidates in
+memory, and reports only whether a server, Manager, or port listener is seen.
+It does not open the database/config/private key, stop processes or write to
+the installation. Its coarse process census is diagnostic evidence, not yet a
+safe offline lifecycle or authorization for installation.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
