@@ -19,7 +19,9 @@ def running_job(path, ready, release):
 
 class WorkerGateTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(prefix='rb-worker-gate-')
+        # macOS /var is a symlink to /private/var; the production gate must
+        # refuse it. Put this disposable fixture under the checkout instead.
+        self.temp = tempfile.TemporaryDirectory(prefix='rb-worker-gate-', dir=Path.cwd())
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)
 
