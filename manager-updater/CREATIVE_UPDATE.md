@@ -288,6 +288,11 @@ token provided by the Manager. The route reports only the parent, worker and
 audio process IDs, and rejects an absent or wrong token. This is one input to
 the future ownership check, not proof that a returned PID is safe to stop;
 the retained launch handle and fresh OS process inventory still have to match.
+`process_group_inventory.py` now parses a read-only OS process snapshot and
+refuses a server whose parent is not the Manager, a worker whose parent is not
+that server, or any third process in their group (including an orphaned audio
+helper). A failed or malformed OS snapshot refuses the operation. This does
+not yet bind a live Mac process to the launch handle or enable any signal.
 Synthetic behavior tests and the redacted AST compilation pass. The earlier
 Mac result applies to the previous byte-identical candidate only; this newer
 variant needs its own read-only Mac compatibility check after the remaining
