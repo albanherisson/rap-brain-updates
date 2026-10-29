@@ -376,6 +376,9 @@ retained Manager child. Under exclusive HTTP and worker locks it checks the
 private ticket, launch script hash and retained handle start identity, obtains
 the token-authenticated parent/worker/audio report, checks fresh OS parentage
 and process group, reads only grouped SQLite job states, and rechecks the handle.
+The launch argument check matches the exact Beta 14 supervisor command
+`[sys.executable, '-u', server.py]`; an earlier two-argument assumption was
+corrected before wiring any live stop.
 It rejects a queued job or busy worker lock. It never signals a process, and
 its success is only a short-lived snapshot: the future lifecycle adapter must
 create/authenticate the maintenance attempt first and collect it again directly
@@ -405,5 +408,14 @@ Manager lifecycle adapter must still own this lease, create the durable intent,
 coordinate journal recovery and candidate health, and keep the ticket until a
 terminal transaction. The real server's graceful exit and worker cleanup have
 not been exercised on the owner's Mac.
+
+The exact Beta 14 server launch includes Python's `-u` argument; the runtime
+collector now requires those three exact launch arguments instead of the
+incorrect two-argument shape used by its first fixture. A disposable integration
+test now starts a real guarded HTTP parent and worker subprocess, creates the
+maintenance marker, requests their graceful exit and verifies the SQLite/config
+fixture bytes remain identical. The execution environment cannot run its own
+`ps -p` inventory, so that test substitutes the independently tested OS
+collectors; it does not claim the actual Mac process inventory passed.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

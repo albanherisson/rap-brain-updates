@@ -7,6 +7,7 @@ import fcntl
 import hashlib
 import os
 import sqlite3
+import sys
 
 from authenticated_runtime_client import read_runtime_proof
 from creative_release import Refused
@@ -39,8 +40,9 @@ def collect_owned_idle_proof(*, source, state, handle, recorded_start,
             any(c not in b'0123456789abcdef' for c in ticket[:-1])):
         raise Refused('maintenance_ticket_invalid')
     if (type(getattr(handle, 'args', None)) not in (list, tuple) or
-            len(handle.args) != 2 or
-            os.path.realpath(handle.args[1]) != str(script.resolve())):
+            len(handle.args) != 3 or handle.args[0] != sys.executable or
+            handle.args[1] != '-u' or
+            os.path.realpath(handle.args[2]) != str(script.resolve())):
         raise Refused('owned_launch_script_mismatch')
 
     parent_start = require_live_owned_handle(handle, recorded_start)

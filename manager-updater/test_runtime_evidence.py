@@ -3,6 +3,7 @@ import hashlib
 import os
 from pathlib import Path
 import sqlite3
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -16,7 +17,7 @@ class Child:
     pid = 5100
 
     def __init__(self, script):
-        self.args = ['python3', str(script)]
+        self.args = [sys.executable, '-u', str(script)]
 
     def poll(self):
         return None
@@ -76,6 +77,9 @@ class EvidenceTests(unittest.TestCase):
                            return_value=dict(report, audio_pid=5102)):
                     with self.assertRaisesRegex(Refused, 'audio_capture'):
                         collect_owned_idle_proof(**kwargs)
+                handle.args[1] = '-B'
+                with self.assertRaisesRegex(Refused, 'owned_launch_script_mismatch'):
+                    collect_owned_idle_proof(**kwargs)
 
 
 if __name__ == '__main__':
