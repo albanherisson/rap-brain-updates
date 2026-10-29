@@ -66,14 +66,24 @@ def inventory(app):
     return result
 
 
-def codesign(app, *, replace=False):
+def codesign(app, *, stage, replace=False):
+    commands = []
     if replace:
-        subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
-                        str(app)], check=True, capture_output=True, timeout=90,
-                       stdin=subprocess.DEVNULL)
-    subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
-                    str(app)], check=True, capture_output=True, timeout=90,
-                   stdin=subprocess.DEVNULL)
+        commands.append(('/usr/bin/codesign', '--force', '--deep', '--sign', '-',
+                         str(app)))
+    commands.append(('/usr/bin/codesign', '--verify', '--deep', '--strict',
+                     str(app)))
+    for args in commands:
+        try:
+            subprocess.run(args, check=True, capture_output=True, timeout=90,
+                           stdin=subprocess.DEVNULL)
+        except subprocess.CalledProcessError as exc:
+            detail = exc.stderr.decode('utf-8', 'replace').strip()
+            # Only a codesign diagnostic is shown, never app contents. Hide
+            # home/temp paths even if codesign echoes them in its error.
+            detail = detail.replace(str(app), '<copie>').replace(
+                str(Path.home()), '~').replace('\n', ' ')
+            raise ValueError(stage + '_codesign_failed: ' + detail[-350:]) from exc
 
 
 def copy_file_without_system_flags(source, target):
@@ -116,6 +126,7 @@ def run():
     if source_app.suffix != '.app' or source_app.is_symlink():
         raise ValueError('app_path_unexpected')
     original = inventory(source_app)
+    codesign(source_app, stage='original_active_verify')
     with tempfile.TemporaryDirectory(prefix='rapbrain-app-signature-copy-') as temp:
         folder = Path(temp)
         app = folder / 'candidate.app'
@@ -124,7 +135,7 @@ def run():
                         copy_function=copy_file_without_system_flags)
         if inventory(app) != original:
             raise ValueError('app_copy_changed')
-        codesign(app)
+        codesign(app, stage='original_copy_verify')
         shutil.copytree(app, backup, symlinks=True,
                         copy_function=copy_file_without_system_flags)
         if inventory(backup) != original:
@@ -132,7 +143,7 @@ def run():
         resources = app / 'Contents' / 'Resources'
         (resources / 'launch_manager.py').write_bytes(candidate_launcher)
         (resources / 'dashboard_beta14.html').write_bytes(candidate_dashboard)
-        codesign(app, replace=True)
+        codesign(app, stage='candidate_sign', replace=True)
         if (digest((resources / 'launch_manager.py').read_bytes()) != hashes[1] or
                 digest((resources / 'dashboard_beta14.html').read_bytes()) != hashes[2]):
             raise ValueError('signed_candidate_changed')
@@ -141,7 +152,7 @@ def run():
                         copy_function=copy_file_without_system_flags)
         if inventory(app) != original:
             raise ValueError('copy_rollback_changed')
-        codesign(app)
+        codesign(app, stage='restored_copy_verify')
     if inventory(source_app) != original:
         raise ValueError('original_app_changed')
     if digest(probe.SERVER.read_bytes()) != probe.EXPECTED[probe.SERVER]:
