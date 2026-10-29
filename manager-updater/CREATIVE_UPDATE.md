@@ -543,4 +543,13 @@ The fixture also restores the exact original pair after interruption between
 the server and launcher replacements; SQLite/config and other data bytes stay
 unchanged. These are copy-only recovery tests, not a Mac installation.
 
+`creative_install_controller.py` is the prospective parent-side entrypoint
+for a single click after the guarded bootstrap. It refuses a server not owned
+by this Manager instance before downloading, resumes a pending transaction
+as the entire click, and otherwise passes a signed-channel download to the
+existing transaction. It is not imported by the installed Beta 14, and the
+current two-file bootstrap does not bundle this module or its dependencies.
+The signed first bootstrap must ship those resources and the Swift verifier
+before any real installation button is enabled.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
