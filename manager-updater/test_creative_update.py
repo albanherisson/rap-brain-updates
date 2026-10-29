@@ -40,6 +40,11 @@ class FixtureLifecycle:
         self.stopped = True
         yield self
 
+    def resume_maintenance(self, source, identifier):
+        # Disposable fixture has no process or marker. Production recovery
+        # must verify and retain its original durable attempt instead.
+        return self.maintenance(source)
+
     def assert_stopped(self):
         if not self.stopped:
             raise Refused('process_not_stopped')
@@ -479,6 +484,24 @@ tx.install((root/'manifest.json').read_bytes(), (root/'update.zip').read_bytes()
         self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
         self.assertEqual(self.data_snapshot(), self.original_data)
         self.assertIsNone(self.transaction().recover())
+
+    def test_pending_journal_requires_original_attempt_recovery(self):
+        self.crash_at('backup_ready')
+        journal = self.root / 'state' / 'transaction.json'
+        identifier = json.loads(journal.read_text())['id']
+        lifecycle = FixtureLifecycle()
+        lifecycle.resume_maintenance = None
+        with self.assertRaisesRegex(Refused, 'owned_maintenance_recovery_required'):
+            self.transaction(lifecycle).recover()
+        self.assertEqual(json.loads(journal.read_text())['phase'], 'backup_ready')
+        self.assertEqual((self.source / 'creative_engine.py').read_bytes(), self.before)
+
+        class WrongAttempt(FixtureLifecycle):
+            transaction_id = '0' * 32
+
+        with self.assertRaisesRegex(Refused, 'recovery_attempt_identity_changed'):
+            self.transaction(WrongAttempt()).recover()
+        self.assertEqual(json.loads(journal.read_text())['id'], identifier)
 
     def test_crash_after_backup_aborts_without_installing(self):
         self.crash_at('backup_ready')

@@ -468,4 +468,11 @@ Beta 14 launcher and disposable guarded-server fixture, and startup refusal
 is tested with disposable subprocesses. Neither final candidate is installed
 or a production lifecycle adapter.
 
+Pending transaction recovery now demands a separate
+`resume_maintenance(source, attempt_id)` lifecycle operation. An adapter that
+only offers fresh maintenance is refused before any rollback or code edit; a
+returned lease for another attempt is refused as well. The disposable crash
+tests provide an explicit fixture implementation. The production resume path
+still needs to authenticate the original ticket and prove every writer stopped.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

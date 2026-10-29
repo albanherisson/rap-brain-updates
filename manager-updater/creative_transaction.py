@@ -7,6 +7,8 @@ assert_stopped() must confirm exit of every writer. start_and_check() must
 check authenticated application health and stop its owned candidate on failure.
 stop_candidate() must stop only the exact process it started. A TCP-port probe
 is NOT an acceptable implementation. No default adapter or live CLI exists.
+Pending-journal recovery additionally requires resume_maintenance(source, id)
+to authenticate the original attempt; it must not allocate a fresh ticket.
 
 The only active file ever replaced is creative_engine.py. Data backups are
 never restored automatically over the live database, including after a crash.
@@ -197,7 +199,16 @@ class Transaction:
         from strict_json import parse_signed_json
         issued = parse_signed_json(raw)['signed_payload']['issued_at']
         manifest = verify_manifest(raw, now=issued, pinned_key=self.pin)
-        with self.lifecycle.maintenance(self.source) as lease:
+        # A pending journal belongs to the attempt that wrote it. Re-entering
+        # ordinary maintenance would allocate a different ticket/identity and
+        # could strand or silently bypass its durable marker. A production
+        # adapter must explicitly authenticate and resume the original attempt.
+        resume = getattr(self.lifecycle, 'resume_maintenance', None)
+        if not callable(resume):
+            raise Refused('owned_maintenance_recovery_required')
+        with resume(self.source, identifier) as lease:
+            if getattr(lease, 'transaction_id', identifier) != identifier:
+                raise Refused('recovery_attempt_identity_changed')
             lease.assert_stopped()
             if record['phase'] in ('preparing', 'backup_ready'):
                 self.assert_baseline(manifest)
