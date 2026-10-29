@@ -485,4 +485,17 @@ an active guarded writer, a listener, a different attempt, and a terminal
 journal. The macOS listener census and authenticated restart still belong to
 the unfinished production lifecycle adapter.
 
+`owned_guarded_lifecycle.py` now joins the retained Beta 14 Popen identity,
+durable attempt, authenticated graceful stop, exclusive lifetime lock,
+ticketed restart, authenticated server/worker status and terminal marker
+finalization. It also exposes the separate stopped-attempt resume operation
+required by the transaction. An end-to-end disposable signed transaction uses
+this adapter for both commit and health-failure rollback while proving SQLite,
+Ollama config and audio bytes unchanged. OS start/group and listener census
+are mocked in that fixture because this runner cannot validate the owner's
+macOS process inventory. This candidate is not imported by Beta 14 and does
+not make installation available. A first signed guarded-server/bootstrap
+installation, recovery of a still-running orphaned attempt, actual Mac process
+lifecycle validation, real Ollama validation and a production release remain.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

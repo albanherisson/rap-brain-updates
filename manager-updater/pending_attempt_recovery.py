@@ -10,11 +10,28 @@ import hashlib
 import json
 import os
 import stat
+import subprocess
 from pathlib import Path
 
 from creative_release import Refused
 from creative_transaction import safe_path
 from worker_activity_gate import _lock, _state
+
+
+def require_no_local_listener(port=8765):
+    """Require an exact lsof no-match result, not an inaccessible inventory."""
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise Refused('invalid_recovery_port')
+    try:
+        result = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port}',
+                                 '-sTCP:LISTEN', '-Fp'],
+                                capture_output=True, text=True, timeout=5,
+                                stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise Refused('listener_inventory_unavailable') from exc
+    if result.returncode != 1 or result.stdout or result.stderr:
+        raise Refused('local_listener_still_present_or_unknown')
+    return True
 
 
 def _unique(pairs):

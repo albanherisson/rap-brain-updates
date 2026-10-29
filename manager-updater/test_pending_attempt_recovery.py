@@ -4,9 +4,10 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import Mock, patch
 
 from creative_release import Refused
-from pending_attempt_recovery import acquire_stopped_attempt
+from pending_attempt_recovery import acquire_stopped_attempt, require_no_local_listener
 from prejournal_intent import begin_attempt
 
 
@@ -63,6 +64,16 @@ class PendingRecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(Refused, 'recovery_attempt_mismatch'):
             self.acquire()
         self.assertTrue((self.state / 'maintenance.ticket').exists())
+
+    def test_macos_listener_inventory_requires_exact_no_match(self):
+        with patch('pending_attempt_recovery.subprocess.run',
+                   return_value=Mock(returncode=1, stdout='', stderr='')):
+            self.assertTrue(require_no_local_listener())
+        for result in (Mock(returncode=0, stdout='p5100\n', stderr=''),
+                       Mock(returncode=1, stdout='', stderr='permission denied')):
+            with patch('pending_attempt_recovery.subprocess.run', return_value=result):
+                with self.assertRaisesRegex(Refused, 'local_listener_still_present'):
+                    require_no_local_listener()
 
 
 if __name__ == '__main__':
