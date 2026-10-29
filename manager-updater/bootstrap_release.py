@@ -11,10 +11,8 @@ import stat
 import time
 import zipfile
 
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from cryptography.exceptions import InvalidSignature
-
 from creative_release import Refused, canonical, digest
+from ed25519_runtime import verify_signature
 from recovery_start_guards import prepare_launcher, prepare_server
 from strict_json import parse_signed_json
 
@@ -41,8 +39,8 @@ def verify_bootstrap(manifest_bytes, archive_bytes, original_server,
         if len(pub) != 32 or len(signature) != 64 or digest(pub) != pinned_key:
             raise Refused('bootstrap_publisher_mismatch')
         signed = envelope['signed_payload']
-        Ed25519PublicKey.from_public_bytes(pub).verify(signature, canonical(signed))
-    except (ValueError, TypeError, InvalidSignature) as exc:
+        verify_signature(pub, signature, canonical(signed))
+    except (ValueError, TypeError) as exc:
         raise Refused('bootstrap_signature_invalid') from exc
     fields = {'schema', 'sequence', 'issued_at', 'expires_at',
               'production_install_authorized', 'baseline_server_sha256',

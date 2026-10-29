@@ -512,4 +512,15 @@ maintenance ticket exists; the final Beta 14 launcher refuses that intent
 before spawning. A ticketed bootstrap health restart can still run under the
 existing server lifetime guard. These checks are tested on disposable copies.
 
+Signature verification now has a CryptoKit fallback in `ed25519_runtime.py`
+for the owner's Mac when the `cryptography` Python package is absent. It uses
+the same already-pinned public keys, verifies exact canonical message bytes,
+and accesses no private key. Linux tests exercise the Python path; macOS CI
+also forces the fallback and checks that a changed message is rejected. The
+Swift verifier must be bundled with a future installable Manager candidate.
+The macOS fixture exposed a worker-start and HTTP admission timing race. The
+prospective lifecycle now waits for an authenticated worker before creating a
+maintenance attempt and retries only a short transient admission-lock conflict
+during cooperative rollback. It never falls back to a raw PID signal.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

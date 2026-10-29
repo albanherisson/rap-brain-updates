@@ -15,6 +15,7 @@ from urllib.parse import urlsplit
 import zipfile
 
 from strict_json import parse_signed_json
+from ed25519_runtime import verify_signature
 
 # Fingerprint already pinned and verified by Beta 14 / P10 on the owner's Mac.
 CREATIVE_KEY_PIN = 'ae32610121418b50adcc8726df567a22ed7b3af67f804ef9aaaa7a1a4efce504'
@@ -65,7 +66,6 @@ def fetch(url, limit):
 
 
 def verify_manifest(raw, *, minimum_sequence=0, now=None, pinned_key=CREATIVE_KEY_PIN):
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
     envelope = parse_signed_json(raw)
     if not isinstance(envelope, dict) or set(envelope) != {
             'signed_payload', 'signature_algorithm', 'signature_base64', 'public_key_base64'}:
@@ -76,8 +76,8 @@ def verify_manifest(raw, *, minimum_sequence=0, now=None, pinned_key=CREATIVE_KE
     if digest(pub) != pinned_key:
         raise Refused('publisher_key_mismatch')
     signed = envelope['signed_payload']
-    Ed25519PublicKey.from_public_bytes(pub).verify(
-        base64.b64decode(envelope['signature_base64'], validate=True), canonical(signed))
+    verify_signature(pub, base64.b64decode(envelope['signature_base64'], validate=True),
+                     canonical(signed))
     fields = {'schema', 'component', 'target', 'sequence', 'issued_at', 'expires_at',
               'production_install_authorized', 'baseline_sha256', 'required_server_sha256',
               'payload_sha256', 'archive_url', 'archive_sha256', 'archive_bytes',

@@ -60,6 +60,22 @@ class OwnedGuardedLifecycle:
         self._assert_source(source)
         launch = bind_owned_launch(self.supervisor_state,
                                    expected_server_sha256=self.expected_server_sha256)
+        # A newly launched parent may begin listening before its worker has
+        # been retained. Wait for an authenticated idle identity before the
+        # durable marker, so a startup race cannot strand maintenance.
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                read_runtime_proof(self.port, launch.token,
+                                   expected_parent_pid=launch.handle.pid)
+                break
+            except Refused as exc:
+                if (str(exc) not in ('runtime_process_identity_mismatch',
+                                     'runtime_proof_unavailable') or
+                        time.monotonic() >= deadline):
+                    raise
+                require_live_owned_handle(launch.handle, launch.start)
+                time.sleep(0.05)
         self.transaction_id = uuid.uuid4().hex
         self.ticket = (secrets.token_hex(32) + '\n').encode('ascii')
         begin_attempt(self.state, self.source, self.ticket, self.transaction_id)
@@ -193,10 +209,23 @@ class OwnedGuardedLifecycle:
             return
         if self.current is None or self.start is None:
             raise Refused('owned_candidate_identity_unavailable')
-        self.lock = graceful_stop_owned(
-            source=self.source, state=self.state, handle=self.current,
-            recorded_start=self.start, recorded_server_sha256=self.expected_server_sha256,
-            token=self.token, ticket=self.ticket, port=self.port)
+        deadline = time.monotonic() + 3
+        while True:
+            try:
+                self.lock = graceful_stop_owned(
+                    source=self.source, state=self.state, handle=self.current,
+                    recorded_start=self.start,
+                    recorded_server_sha256=self.expected_server_sha256,
+                    token=self.token, ticket=self.ticket, port=self.port)
+                break
+            except Refused as exc:
+                # The authenticated health GET can briefly retain the shared
+                # admission lock after its response. Only this transient lock
+                # conflict is retried; changed ownership or active work is
+                # never overridden with a process signal.
+                if str(exc) != 'worker_busy_or_maintenance' or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.05)
         self.healthy = False
 
     def _finish_if_healthy(self):
