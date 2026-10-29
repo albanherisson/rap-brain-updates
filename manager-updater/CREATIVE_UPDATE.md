@@ -280,4 +280,12 @@ The output reported no active file modified, database opened or server started.
 This establishes source compatibility only; it cannot prove the running worker
 is idle or enable installation.
 
+A further isolated `server_worker_resume_candidate.py` wraps `resume_jobs()`
+with the same worker job lock. This closes a gap at worker startup: a resumed
+analysis cannot rewrite job state while a maintenance marker is present.
+Synthetic behavior tests and the redacted AST compilation pass. The earlier
+Mac result applies to the previous byte-identical candidate only; this newer
+variant needs its own read-only Mac compatibility check after the remaining
+lifecycle pieces are ready. Neither variant has been installed.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
