@@ -13,7 +13,8 @@ class IsolatedPortTests(unittest.TestCase):
 
     def test_unknown_or_duplicate_declaration_refuses(self):
         for source in (b'PORT = int("8765")\n', b'PORT = 8765\nPORT = 8765\n',
-                       b'PORT = 8766\n', b'PORT = True\n'):
+                       b'PORT = 8766\n', b'PORT = True\n',
+                       b'PORT = 8765\nOTHER = 8765\n'):
             with self.subTest(source=source), self.assertRaises(Refused):
                 disposable_port_copy(source, digest(source), 18765)
 

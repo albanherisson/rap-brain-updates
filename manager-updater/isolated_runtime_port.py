@@ -26,6 +26,12 @@ def disposable_port_copy(candidate, expected_sha256, port):
             assignments[0].lineno != assignments[0].end_lineno):
         raise Refused('isolated_port_declaration_unknown')
     declaration = assignments[0]
+    # A second hard-coded reference could still send a worker or a health
+    # request to the live port. Refuse until that use is understood.
+    if any(node is not declaration.value and isinstance(node, ast.Constant) and
+           type(node.value) is int and node.value == 8765
+           for node in ast.walk(tree)):
+        raise Refused('isolated_port_other_reference')
     lines = source.splitlines(keepends=True)
     line = lines[declaration.lineno - 1]
     start, end = declaration.value.col_offset, declaration.value.end_col_offset
