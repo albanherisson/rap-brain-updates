@@ -630,4 +630,12 @@ same attempt without accessing the GitHub channel. A crash before the saved
 manifest is complete still fails closed and needs a separate recovery path;
 it must not be treated as an ordinary new installation.
 
+`build_first_bootstrap_app.py` can package that entrypoint and its static
+Python dependency closure into a separate Finder app built with macOS
+`osacompile` and local ad-hoc `codesign`. Its AppleScript UI reports the
+offline refusal in plain French. The app builder has a macOS-only disposable
+bundle/signature test; the GitHub macOS runners have not completed it yet.
+No installer app or bootstrap release is published, and the package itself
+does not carry a publisher signing key or authorize a release.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
