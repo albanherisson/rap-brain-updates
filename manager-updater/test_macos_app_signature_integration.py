@@ -7,6 +7,8 @@ import tempfile
 import unittest
 
 from app_bundle_backup import inventory, restore_app_backup, save_app_backup
+from mac_disposable_app_signature_probe import (
+    copy_file_without_system_flags, inventory as probe_inventory)
 from mac_offline_bootstrap_gate import resign_verified_app, verify_restored_app
 
 
@@ -45,6 +47,11 @@ class MacAppSignatureIntegrationTests(unittest.TestCase):
             launcher.write_bytes(b'print("original")\n')
             subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
                             str(app)], check=True, capture_output=True)
+            helper_copy = root / 'DetachedHelperCopy'
+            copy_file_without_system_flags(helper, helper_copy)
+            subprocess.run(['/usr/bin/codesign', '--verify', '--strict',
+                            str(helper_copy)], check=True, capture_output=True)
+            self.assertIn('Contents/MacOS/DetachedHelper', probe_inventory(app))
             folder = root / 'private-backup'
             folder.mkdir(mode=0o700)
             original = save_app_backup(app, folder)
