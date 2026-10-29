@@ -22,6 +22,8 @@ from creative_transaction import Transaction
 from disposable_update_lifecycle import DisposableLifecycle, MARKER
 from owned_child_supervisor_lab import CHILD
 from server_lifetime_guard import prepare as prepare_guarded_server
+from prejournal_intent import begin_attempt
+from worker_activity_gate import finish_maintenance
 
 
 class FixtureLifecycle:
@@ -297,6 +299,32 @@ if __name__ == '__main__':
         self.assertEqual(result['backup_id'], lease.transaction_id)
         journal = json.loads((self.root / 'state' / 'transaction.json').read_text())
         self.assertEqual(journal['id'], lease.transaction_id)
+
+    def test_disposable_intent_and_transaction_finish_same_attempt(self):
+        state_path = self.root / 'state'
+        ticket = b'e' * 64 + b'\n'
+        class IntentFixture(FixtureLifecycle):
+            transaction_id = 'd' * 32
+
+            @contextmanager
+            def maintenance(self, source):
+                begin_attempt(state_path, source, ticket, self.transaction_id)
+                try:
+                    yield self
+                finally:
+                    journal = state_path / 'transaction.json'
+                    if journal.exists() and json.loads(journal.read_text()).get('phase') in (
+                            'committed', 'rolled_back', 'aborted'):
+                        finish_maintenance(state_path, ticket,
+                                           expected_transaction_id=self.transaction_id,
+                                           owned_health_verified=not self.stopped,
+                                           require_intent=True)
+
+        result = self.transaction(IntentFixture()).install(self.signed(), self.archive)
+        self.assertEqual(result['state'], 'committed')
+        self.assertFalse((state_path / 'maintenance.ticket').exists())
+        self.assertFalse((state_path / 'maintenance-intent.json').exists())
+        self.assertEqual(self.data_snapshot(), self.original_data)
 
     def test_invalid_lifecycle_attempt_id_refuses_before_backup(self):
         lease = FixtureLifecycle()

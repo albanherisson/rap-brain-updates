@@ -360,5 +360,11 @@ the marker and intent under the HTTP and worker locks. Disposable tests cover
 the matching handoff and a mismatched transaction. A production adapter still
 has to provide the lease, authenticated health and process stop/restart; no
 live installation is enabled.
+An additional disposable integration test now drives the signed engine
+transaction with a lifecycle fixture that creates the durable intent and
+marker, uses the same ID in its real SQLite/config backup journal, and removes
+both only after a committed healthy result. The fixture verifies the entire
+data folder remains byte-identical. This is interface evidence, not the real
+Manager-owned process adapter.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
