@@ -394,4 +394,16 @@ has been sent to the owner's Mac. An owned-handle client must recheck the OS
 identity, send the request only to that process, wait for both exits, and hold
 the maintenance marker through rollback before this can become an installer.
 
+`owned_graceful_stop.py` now joins those pieces without PID signalling: it
+collects fresh authenticated/OS/SQLite idle evidence, rechecks the loopback
+listener owner, requests the token- and ticket-gated stop, waits for the exact
+retained child handle, verifies its entire process group is gone, and acquires
+the server lifetime lock exclusively. It returns that lock still held for the
+ticketed restart handoff. A local loopback fixture checks the request, successful
+exit and timeout refusal; no live Rap Brain process has been stopped. The
+Manager lifecycle adapter must still own this lease, create the durable intent,
+coordinate journal recovery and candidate health, and keep the ticket until a
+terminal transaction. The real server's graceful exit and worker cleanup have
+not been exercised on the owner's Mac.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
