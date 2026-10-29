@@ -335,9 +335,23 @@ reads only the original active server and Beta 14 launcher after checking
 their known digests, and compiles the current guarded candidates in memory.
 It prints only two candidate hashes. Passing it still cannot authorize a real
 stop, bootstrap or installation; the durable pre-journal handoff remains open.
-Synthetic behavior tests and the redacted AST compilation pass. The earlier
-Mac result applies to the previous byte-identical candidate only; this newer
-variant needs its own read-only Mac compatibility check after the remaining
-lifecycle pieces are ready. Neither variant has been installed.
+On 29 October 2026 the owner ran the combined check on the Mac. Both original
+active sources matched, and the candidates compiled in memory:
+
+- server SHA-256: `c579c60c2034185de403306464607f5d0c04ed9ba0fee35d37cf27a34bd58376`;
+- Beta 14 launcher SHA-256: `b1c851c335b4270c0b708379f8b7a8b3e7b8c0c747380c06e99bc0c8be99ac35`.
+
+The owner reported no active file modified, database opened or server started.
+This is source compatibility only. Neither candidate has been installed.
+
+`prejournal_intent.py` now supplies a disposable durable attempt record written
+before the maintenance marker. Its pre-journal recovery checks that the engine
+and server still match the recorded hashes, that the prior journal has not
+advanced, and that the server lifetime lock is exclusively available. It then
+checks the ticket under the HTTP and worker locks before removing the marker.
+A killed-updater process drill recovers the unmodified fixture; altered code,
+an advanced journal, or a running server leave the marker in place. The real
+Beta 14 transaction has not yet been wired to this attempt record; until it
+is, the pre-journal production blocker remains open.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
