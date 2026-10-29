@@ -26,6 +26,11 @@ class MacAppSignatureIntegrationTests(unittest.TestCase):
             # unprivileged CI runner cannot copy into a temporary bundle.
             executable.write_bytes(Path('/bin/echo').read_bytes())
             executable.chmod(0o755)
+            helper = executable.with_name('DetachedHelper')
+            helper.write_bytes(b'#!/bin/sh\nexit 0\n')
+            helper.chmod(0o755)
+            subprocess.run(['/usr/bin/codesign', '--force', '--sign', '-',
+                            str(helper)], check=True, capture_output=True)
             (app / 'Contents' / 'Info.plist').write_bytes(plistlib.dumps({
                 'CFBundleIdentifier': 'org.rapbrain.disposable-codesign-test',
                 'CFBundleExecutable': executable.name,
@@ -40,6 +45,10 @@ class MacAppSignatureIntegrationTests(unittest.TestCase):
             folder = root / 'private-backup'
             folder.mkdir(mode=0o700)
             original = save_app_backup(app, folder)
+            saved_helper = (folder / 'app-original.app' / 'Contents' / 'MacOS' /
+                            'DetachedHelper')
+            subprocess.run(['/usr/bin/codesign', '--verify', '--strict',
+                            str(saved_helper)], check=True, capture_output=True)
             offline = lambda *_: {'server_process_seen': False,
                                   'manager_process_seen': False,
                                   'port_8765_listening': False}

@@ -646,4 +646,12 @@ then restores and verifies the copied original. It reads the source hashes
 but does not run the server or open data. This rehearsal has not been run on
 the owner's Mac and must not be described as passed.
 
+The first owner rehearsal refused at `original_copy_verify`: the active app's
+signature verified, but the copied `RapBrainManagerLegacy` shell launcher lost
+its detached code-signing metadata. Full app inventory, private backup and
+restoration now also record and restore bounded file extended attributes;
+the disposable Mac probe preserves them as well. Linux tests check metadata
+round trips, and a macOS fixture signs a shell helper to exercise detached
+metadata. Actual owner copy validation must be repeated before installation.
+
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.

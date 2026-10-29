@@ -45,7 +45,7 @@ def load_pinned_probe():
 def inventory(app):
     app = Path(app)
     result = {}
-    total = 0
+    total = xattr_total = 0
     for base, dirs, files in os.walk(app, followlinks=False):
         for name in dirs + files:
             path = Path(base) / name
@@ -57,10 +57,19 @@ def inventory(app):
                 continue
             raw = path.read_bytes()
             total += len(raw)
-            if len(result) >= 1000 or total > 100_000_000:
+            attrs = {}
+            names = os.listxattr(path, follow_symlinks=False)
+            if len(names) > 32:
+                raise ValueError('app_xattr_limit')
+            for attr in names:
+                value = os.getxattr(path, attr, follow_symlinks=False)
+                xattr_total += len(value)
+                attrs[attr] = digest(value)
+            if (len(result) >= 1000 or total > 100_000_000 or
+                    xattr_total > 1_000_000):
                 raise ValueError('app_copy_size_limit')
             result[path.relative_to(app).as_posix()] = (digest(raw),
-                stat.S_IMODE(info.st_mode))
+                stat.S_IMODE(info.st_mode), attrs)
     if not result:
         raise ValueError('app_copy_empty')
     return result
@@ -87,9 +96,13 @@ def codesign(app, *, stage, replace=False):
 
 
 def copy_file_without_system_flags(source, target):
-    """Preserve file bytes/mode, without macOS restricted flags or xattrs."""
+    """Preserve detached script signatures, without restricted system flags."""
     shutil.copyfile(source, target)
     Path(target).chmod(stat.S_IMODE(Path(source).stat().st_mode))
+    for name in os.listxattr(source, follow_symlinks=False):
+        os.setxattr(target, name,
+                    os.getxattr(source, name, follow_symlinks=False),
+                    follow_symlinks=False)
     return target
 
 

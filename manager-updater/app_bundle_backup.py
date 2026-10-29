@@ -4,6 +4,8 @@ This preserves executable and code-signature resources, which can change when
 the staged app is locally re-signed. Refuses symlinks, special files, unexpected
 new files and changed backup bytes. Does not run codesign or touch Rap Brain data.
 """
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -17,6 +19,30 @@ from creative_transaction import atomic_write, fsync_dir, safe_path
 
 MAX_FILES = 1000
 MAX_BYTES = 100_000_000
+MAX_XATTR_BYTES = 1_000_000
+
+
+def file_xattrs(path):
+    """Preserve detached signatures on script executables as well as bytes."""
+    names = os.listxattr(path, follow_symlinks=False)
+    if len(names) > 32:
+        raise Refused('app_bundle_xattr_limit')
+    result = {}
+    for name in names:
+        if not isinstance(name, str) or not 0 < len(name) <= 200 or not all(
+                32 <= ord(c) < 127 for c in name):
+            raise Refused('app_bundle_xattr_name')
+        value = os.getxattr(path, name, follow_symlinks=False)
+        if len(value) > 250_000:
+            raise Refused('app_bundle_xattr_limit')
+        result[name] = base64.b64encode(value).decode('ascii')
+    return result
+
+
+def restore_xattrs(path, encoded):
+    for name, value in encoded.items():
+        os.setxattr(path, name, base64.b64decode(value, validate=True),
+                    follow_symlinks=False)
 
 
 def inventory(app):
@@ -24,7 +50,7 @@ def inventory(app):
     if app.suffix != '.app':
         raise Refused('app_bundle_required')
     result = {}
-    total = 0
+    total = xattr_total = 0
     for base, dirs, files in os.walk(app, followlinks=False):
         for name in dirs + files:
             path = Path(base) / name
@@ -37,11 +63,14 @@ def inventory(app):
             relative = path.relative_to(app).as_posix()
             raw = path.read_bytes()
             total += len(raw)
-            if len(result) >= MAX_FILES or total > MAX_BYTES:
+            attrs = file_xattrs(path)
+            xattr_total += sum(len(base64.b64decode(value)) for value in attrs.values())
+            if (len(result) >= MAX_FILES or total > MAX_BYTES or
+                    xattr_total > MAX_XATTR_BYTES):
                 raise Refused('app_bundle_size_limit')
             result[relative] = {'sha256': hashlib.sha256(raw).hexdigest(),
                                 'mode': stat.S_IMODE(info.st_mode),
-                                'bytes': len(raw)}
+                                'bytes': len(raw), 'xattrs': attrs}
     if not result or 'Contents/Resources/launch_manager.py' not in result:
         raise Refused('app_bundle_incomplete')
     return result
@@ -56,6 +85,7 @@ def _copy_verified(source, destination, expected):
         if hashlib.sha256(raw).hexdigest() != entry['sha256']:
             raise Refused('app_backup_source_changed')
         atomic_write(path, raw, entry['mode'])
+        restore_xattrs(path, entry['xattrs'])
     if inventory(destination) != expected:
         raise Refused('app_backup_copy_mismatch')
     fsync_dir(destination)
@@ -85,7 +115,7 @@ def read_app_backup(folder):
     if path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
         raise Refused('app_backup_manifest_unsafe')
     raw = path.read_bytes()
-    if not 0 < len(raw) <= 180_000:
+    if not 0 < len(raw) <= 1_500_000:
         raise Refused('app_backup_manifest_size')
     def unique(pairs):
         data = {}
@@ -101,19 +131,33 @@ def read_app_backup(folder):
     if (type(expected) is not dict or not 0 < len(expected) <= MAX_FILES or
             'Contents/Resources/launch_manager.py' not in expected):
         raise Refused('app_backup_manifest_invalid')
-    total = 0
+    total = xattr_total = 0
     for name, entry in expected.items():
         path = Path(name)
         if (type(name) is not str or path.is_absolute() or '..' in path.parts or
                 path.as_posix() != name or not name.startswith('Contents/') or
-                type(entry) is not dict or entry.keys() != {'sha256', 'mode', 'bytes'} or
+                type(entry) is not dict or entry.keys() !=
+                {'sha256', 'mode', 'bytes', 'xattrs'} or
                 type(entry['sha256']) is not str or len(entry['sha256']) != 64 or
                 any(c not in '0123456789abcdef' for c in entry['sha256']) or
                 type(entry['mode']) is not int or not 0 <= entry['mode'] <= 0o777 or
-                type(entry['bytes']) is not int or entry['bytes'] < 0):
+                type(entry['bytes']) is not int or entry['bytes'] < 0 or
+                type(entry['xattrs']) is not dict or len(entry['xattrs']) > 32):
             raise Refused('app_backup_manifest_invalid')
         total += entry['bytes']
-    if total > MAX_BYTES:
+        for attr_name, value in entry['xattrs'].items():
+            if (type(attr_name) is not str or not 0 < len(attr_name) <= 200 or
+                    not all(32 <= ord(c) < 127 for c in attr_name) or
+                    type(value) is not str or len(value) > 333_336):
+                raise Refused('app_backup_manifest_invalid')
+            try:
+                decoded = base64.b64decode(value, validate=True)
+            except (ValueError, binascii.Error) as exc:
+                raise Refused('app_backup_manifest_invalid') from exc
+            if len(decoded) > 250_000:
+                raise Refused('app_backup_manifest_invalid')
+            xattr_total += len(decoded)
+    if total > MAX_BYTES or xattr_total > MAX_XATTR_BYTES:
         raise Refused('app_backup_manifest_size')
     saved = safe_path(folder / 'app-original.app', directory=True)
     if inventory(saved) != expected:
@@ -136,6 +180,7 @@ def restore_app_backup(app, folder, *, allowed_extra=()):
         if hashlib.sha256(raw).hexdigest() != entry['sha256']:
             raise Refused('app_backup_integrity')
         atomic_write(app / name, raw, entry['mode'])
+        restore_xattrs(app / name, entry['xattrs'])
     for name in extras:
         path = safe_path(app / name)
         path.unlink()

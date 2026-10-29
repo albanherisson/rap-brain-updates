@@ -1,4 +1,5 @@
 """Restore the complete disposable app, including local code-signature bytes."""
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -63,6 +64,20 @@ class AppBackupTests(unittest.TestCase):
         (self.app / 'Contents' / 'Resources' / 'outside').symlink_to(self.state)
         with self.assertRaisesRegex(Refused, 'app_bundle_unsafe_entry'):
             save_app_backup(self.app, self.state)
+
+    def test_detached_signature_xattr_survives_backup_and_rollback(self):
+        try:
+            os.setxattr(self.native, 'user.rapbrain.signature', b'original')
+        except OSError as exc:
+            self.skipTest('filesystem does not support test xattr: ' + str(exc))
+        save_app_backup(self.app, self.state)
+        saved = (self.state / 'app-original.app' / 'Contents' / 'MacOS' /
+                 'RapBrainManagerLegacy')
+        self.assertEqual(os.getxattr(saved, 'user.rapbrain.signature'), b'original')
+        os.setxattr(self.native, 'user.rapbrain.signature', b'changed')
+        restore_app_backup(self.app, self.state)
+        self.assertEqual(os.getxattr(self.native, 'user.rapbrain.signature'),
+                         b'original')
 
 
 if __name__ == '__main__':
