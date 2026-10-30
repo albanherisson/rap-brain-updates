@@ -6,6 +6,7 @@ Creative key signs the engine release. Neither private key enters the ZIP.
 No installed code, database, Ollama setting, or process is modified.
 """
 import base64
+import atexit
 import hashlib
 import io
 import json
@@ -16,7 +17,53 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 import zipfile
+
+DEPENDENCY_COMMIT = '24aa0b2f8cf820366b8299ef96bc0f403bb5d266'
+DEPENDENCY_PINS = {
+    'creative_release.py': 'b50195f6665baefd1838f5aec2e750ed33504804d80c6f09bd493aa20ce779a9',
+    'creative_trust_rotation.py': '993626dc769fdfa03bcabfdb4644df83ccda224d7b547623d76ad4e184eb19ba',
+    'mac_publish_creative_p8.py': 'e256f6ac770a1d09e5f2ed859d9145b974a1437eede83c6ac703bdd225ff0e9c',
+    'ed25519_runtime.py': 'b23b50134ebc1177c17dcece765cdf8cb689e5139eca5518d0444068e6ec4ca1',
+    'strict_json.py': '2a65d68caa032c9d561efd4c3c881e54d15e63ba62b8e798fbf613bd94bde183',
+    'verify_ed25519.swift': 'e585f5325f060dc2cc2877d533fd2b94b056dcb8bf5f6785c8ba7bf59ee4d6b1',
+}
+_PINNED_FOLDER = None
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise ValueError('dependency_redirect_refused')
+
+
+def pinned_dependencies():
+    """A single pinned script also works when downloaded alone into /tmp."""
+    global _PINNED_FOLDER
+    here = Path(__file__).resolve().parent
+    if all((here / name).is_file() and not (here / name).is_symlink() and
+           hashlib.sha256((here / name).read_bytes()).hexdigest() == expected
+           for name, expected in DEPENDENCY_PINS.items()):
+        return
+    folder = tempfile.TemporaryDirectory(prefix='rapbrain-public-sources-')
+    _PINNED_FOLDER = folder
+    atexit.register(folder.cleanup)
+    opener = urllib.request.build_opener(_NoRedirect())
+    for name, expected in DEPENDENCY_PINS.items():
+        url = ('https://raw.githubusercontent.com/albanherisson/rap-brain-updates/'
+               + DEPENDENCY_COMMIT + '/manager-updater/' + name)
+        with opener.open(urllib.request.Request(url, headers={
+                'Accept-Encoding': 'identity'}), timeout=20) as response:
+            if response.status != 200 or response.geturl() != url:
+                raise ValueError('dependency_channel_changed')
+            raw = response.read(250_001)
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise ValueError('dependency_hash_changed')
+        (Path(folder.name) / name).write_bytes(raw)
+    sys.path.insert(0, folder.name)
+
+
+pinned_dependencies()
 
 from creative_release import verify_archive, verify_manifest
 from creative_trust_rotation import PUBLISHER_PIN, candidate_for_key, verify_rotation

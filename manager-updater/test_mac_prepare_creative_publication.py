@@ -1,5 +1,6 @@
 import base64
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -7,11 +8,14 @@ import zipfile
 import io
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import (Encoding, PublicFormat,
+    PrivateFormat, NoEncryption)
 
 import creative_trust_rotation as rotation
 from creative_release import canonical
 import mac_prepare_creative_publication as publisher
+import mac_publish_creative_p8 as legacy
+from creative_release import verify_archive, verify_manifest
 
 
 class PublisherPreparationTests(unittest.TestCase):
@@ -53,6 +57,48 @@ class PublisherPreparationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             publisher.rotation_payload(original + b'# different\n', creative_public,
                                        1_800_000_000)
+
+    def test_public_package_has_two_distinct_signatures_and_no_private_seed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary).resolve()
+            resources = (home / 'Downloads' / 'RapBrainManager_App_Beta14' /
+                'Rap Brain Manager Beta 14.app' / 'Contents' / 'Resources')
+            resources.mkdir(parents=True)
+            original = Path(rotation.__file__).with_name('creative_release.py').read_bytes()
+            (resources / 'creative_release.py').write_bytes(original)
+            publisher_key = Ed25519PrivateKey.generate()
+            creative_key = Ed25519PrivateKey.generate()
+            publisher_pub = publisher_key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+            manager_path = home / 'manager.key'
+            creative_path = home / 'creative.key'
+            for path, key in ((manager_path, publisher_key), (creative_path, creative_key)):
+                path.write_bytes(key.private_bytes(Encoding.Raw, PrivateFormat.Raw,
+                                                    NoEncryption()))
+                path.chmod(0o600)
+            code = b'CREATIVE = "synthetic fixture"\n'
+            now = 1_800_000_000
+            with patch.object(sys, 'platform', 'darwin'), \
+                    patch.object(publisher, 'MANAGER_PUBLIC', publisher_pub), \
+                    patch.object(publisher, 'PUBLISHER_PIN', publisher.sha(publisher_pub)), \
+                    patch.object(rotation, 'PUBLISHER_PIN', publisher.sha(publisher_pub)), \
+                    patch.object(legacy, 'PAYLOAD', publisher.sha(code)):
+                raw, pin = publisher.prepare(home, home, now=now,
+                    manager_key=manager_path, creative_key=creative_path,
+                    candidate_code=code)
+                with zipfile.ZipFile(io.BytesIO(raw)) as package:
+                    self.assertEqual(package.namelist(), [
+                        'creative-stable/engine-1.zip',
+                        'creative-stable/manifest.json',
+                        'manager-trust/creative-rotation-1.json'])
+                    rotation.verify_rotation(package.read(
+                        'manager-trust/creative-rotation-1.json'), original, now=now)
+                    release = verify_manifest(package.read('creative-stable/manifest.json'),
+                                               now=now, pinned_key=pin)
+                    self.assertEqual(verify_archive(package.read(
+                        'creative-stable/engine-1.zip'), release), code)
+                self.assertNotIn(manager_path.read_bytes(), raw)
+                self.assertNotIn(creative_path.read_bytes(), raw)
+                self.assertNotEqual(pin, publisher.sha(publisher_pub))
 
 
 if __name__ == '__main__':
