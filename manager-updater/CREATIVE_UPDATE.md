@@ -1,4 +1,34 @@
-# Secure Creative Engine update — implementation pending lifecycle integration
+# Secure Creative Engine update — current state and engineering log
+
+## Current state (30 October 2026)
+
+The owner completed the signed first bootstrap in Finder and then opened the
+existing Rap Brain library and analyses from Beta 14. This is an actual
+installation of the guarded server and one-click Creative updater resources,
+not an installation of the P8 Creative Engine patch. Beta 14's generic update
+tile remains disabled; the Creative-specific signed path is separate.
+
+The owner then ran `mac_p9_isolated_gate.py` against the installed server code,
+the authentic signed P8 candidate, a private synthetic SQLite fixture, and the
+real local `qwen3.5:27b` Ollama model. The disposable server produced four bars
+and returned one synthetic RAG source. Its output confirmed that it stopped
+and that no active library, SQLite or Ollama configuration was opened. This
+establishes P9 real Ollama/full-server validation on a copy. It does not assert
+the quality of those four bars or install the patch.
+
+The production P8 release still needs a fresh Ed25519 signature with the
+existing Creative publisher identity. The P8 rehearsal envelope explicitly
+has `production_install_authorized=false` and binds the pre-bootstrap server;
+it cannot be republished as the production release. `mac_publish_creative_p8.py`
+prepares only a public manifest on the publisher Mac after checking the pinned
+P8 code and current server baseline. An empty `gh-pages` branch exists for the
+future signed channel, but Pages is not yet confirmed enabled, and no production
+manifest or ZIP is published. No live Creative Engine update or production
+rollback has occurred.
+
+The sections below record the earlier implementation stages and their status
+at the time; statements such as “no first bootstrap installed” there are
+historical.
 
 Beta 14's owner-side validation passed on 27 October 2026: native launch,
 SQLite/config backup, separate restoration and P8 signed staging/rollback.
