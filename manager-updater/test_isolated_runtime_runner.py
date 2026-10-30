@@ -9,7 +9,8 @@ from isolated_runtime_runner import run_disposable
 
 
 FIXTURE = b'''import os
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
+from socketserver import TCPServer
 PORT = int(os.getenv('RAP_BRAIN_PORT', '8765'))
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -26,7 +27,7 @@ if __name__ == '__main__':
     Path(os.environ['HOME'], 'fixture-started').write_text(str(PORT))
     Path(os.environ['HOME'], 'fixture-prebind').write_text('ready')
     try:
-        server = HTTPServer(('127.0.0.1', PORT), Handler)
+        server = TCPServer(('127.0.0.1', PORT), Handler)
     except OSError as exc:
         Path(os.environ['HOME'], 'fixture-bind-error').write_text(repr(exc))
         raise
