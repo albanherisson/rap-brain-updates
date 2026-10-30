@@ -40,7 +40,7 @@ class PublisherTests(unittest.TestCase):
         public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
         # The production default rejects a test publisher key.
         with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
+            home = Path(temporary).resolve(strict=True)
             support = home / 'Library' / 'Application Support' / 'RapBrainManager'
             support.mkdir(parents=True)
             path = support / 'creative_ed25519.key'
@@ -71,7 +71,7 @@ class PublisherTests(unittest.TestCase):
         key = Ed25519PrivateKey.generate()
         public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
         with tempfile.TemporaryDirectory() as temporary:
-            home = Path(temporary)
+            home = Path(temporary).resolve(strict=True)
             path = home / 'creative_ed25519.key'
             path.write_bytes(key.private_bytes(Encoding.Raw, PrivateFormat.Raw,
                                               NoEncryption()))
