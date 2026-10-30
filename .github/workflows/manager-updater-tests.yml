@@ -45,6 +45,8 @@ jobs:
           python -B manager-updater/build_first_bootstrap_app.py "$RUNNER_TEMP/Installer Rap Brain.app"
           /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/Installer Rap Brain.app"
           test -f "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/first_bootstrap_installer.py"
+          /bin/sh "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" -c 'import sys; assert sys.version_info >= (3, 10)'
+          /bin/sh "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/first_bootstrap_installer.py" --help >/dev/null
       - name: Package and verify Finder installer archive
         run: |
           /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/Installer Rap Brain.app" "$RUNNER_TEMP/Installer_Rap_Brain.zip"

@@ -18,8 +18,9 @@ ENTRY = 'first_bootstrap_installer'
 APP_NAME = 'Installer Rap Brain.app'
 APPLE_SCRIPT = '''on run
     set scriptPath to (POSIX path of (path to me)) & "Contents/Resources/updater/first_bootstrap_installer.py"
+    set selectorPath to (POSIX path of (path to me)) & "Contents/Resources/updater/python_bootstrap_selector.sh"
     try
-        do shell script "/usr/bin/python3 -B " & quoted form of scriptPath & " --install-signed"
+        do shell script "/bin/sh " & quoted form of selectorPath & " " & quoted form of scriptPath & " --install-signed"
         display dialog "Installation Rap Brain terminée. Tu peux ouvrir le Manager." buttons {"OK"} default button "OK"
     on error errText
         if errText contains "rapbrain_or_manager_still_running" then
@@ -81,6 +82,8 @@ def build(destination, *, source=ROOT, compiler='/usr/bin/osacompile',
         resources.mkdir(mode=0o700)
         for path in files:
             shutil.copyfile(path, resources / path.name)
+        shutil.copyfile(source / 'python_bootstrap_selector.sh',
+                        resources / 'python_bootstrap_selector.sh')
         shutil.copyfile(source / 'verify_ed25519.swift',
                         resources / 'verify_ed25519.swift')
         subprocess.run([signer, '--force', '--deep', '--sign', '-', str(destination)],
