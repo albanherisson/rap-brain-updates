@@ -1,6 +1,3 @@
-fatal: ambiguous argument '6dcfe3b2738830e759d5f477fa7bd4562d684b9f^{tree}': unknown revision or path not in the working tree.
-Use '--' to separate paths from revisions, like this:
-'git <command> [<revision>...] -- [<file>...]'
 """Exercise the actual macOS codesign and exact app rollback on a copy."""
 import plistlib
 from pathlib import Path
