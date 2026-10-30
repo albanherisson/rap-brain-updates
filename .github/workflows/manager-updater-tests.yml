@@ -40,6 +40,11 @@ jobs:
         run: python -m unittest discover -s manager-updater -p 'test_*.py' -v
       - name: Check integration fixture syntax without opening sockets
         run: python -m py_compile manager-updater/fixture_restart_lab.py manager-updater/fixture_transaction_restart_lab.py
+      - name: Build and verify disposable Finder bootstrap app
+        run: |
+          python -B manager-updater/build_first_bootstrap_app.py "$RUNNER_TEMP/Installer Rap Brain.app"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/Installer Rap Brain.app"
+          test -f "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/first_bootstrap_installer.py"
   mac-cryptokit:
     name: macOS CryptoKit identity test
     runs-on: macos-latest
