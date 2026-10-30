@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import zipfile
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -15,12 +15,28 @@ from creative_release import digest, verify_archive, verify_manifest
 from mac_publish_creative_p8 import (BASELINE, PAYLOAD, SERVER, canonical,
     candidate_keys, key_file, make_envelope, one_file_archive, production_payload,
     sign_existing_identity, sign_with_key)
+import mac_publish_creative_p8 as publisher
 
 
 P8 = Path(__file__).resolve().parents[2] / 'upload' / 'RapBrain_CreativeEngine_P8_Signed_Candidate.zip'
 
 
 class PublisherTests(unittest.TestCase):
+    def test_main_copies_only_public_manifest_to_clipboard(self):
+        gate = Mock()
+        gate.SOURCE = Path('/unused')
+        gate.signed_candidate.return_value = b'candidate'
+        with (patch.object(publisher.sys, 'platform', 'darwin'),
+              patch.object(publisher, 'fetch_pinned_gate', return_value=gate),
+              patch.object(publisher, 'one_file_archive', return_value=b'zip'),
+              patch.object(publisher, 'sign_existing_identity', return_value=b'x' * 64),
+              patch.object(publisher.subprocess, 'run') as run):
+            publisher.main()
+        self.assertEqual(run.call_args.args, (['/usr/bin/pbcopy'],))
+        self.assertNotIn('stdin', run.call_args.kwargs)
+        self.assertEqual(json.loads(run.call_args.kwargs['input'])['signed_payload']
+                         ['production_install_authorized'], True)
+
     def test_real_p8_code_makes_exact_production_archive(self):
         if not P8.is_file():
             self.skipTest('owner P8 attachment unavailable in checkout')

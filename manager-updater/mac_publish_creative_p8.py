@@ -220,8 +220,8 @@ def main():
         gate.verify_signature(PUBLIC, signature, canonical(payload), folder)
         # Clipboard contains only the public release manifest, never the key.
         subprocess.run(['/usr/bin/pbcopy'], input=envelope,
-                       stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, check=True, timeout=5)
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       check=True, timeout=5)
     print('MANIFESTE CREATIVE SIGNE : OK')
     print('Signature publique copiée. Colle-la dans la conversation avec Cmd+V.')
     print('Aucun fichier actif modifié. Aucun paquet publié ou installé.')
