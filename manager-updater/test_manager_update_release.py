@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from creative_release import Refused, canonical, digest
 from manager_update_release import (CHANNEL, download_release, verify_archive,
                                     verify_baseline, verify_manifest)
+from manager_update_rehearsal import rehearse_on_copy
 
 
 class ManagerReleaseTest(unittest.TestCase):
@@ -129,6 +130,42 @@ class ManagerReleaseTest(unittest.TestCase):
             (source / 'server.py').write_bytes(b'changed')
             with self.assertRaises(Refused):
                 verify_baseline(manifest, source, resources)
+
+    def test_code_swap_and_exact_rollback_on_copy(self):
+        with tempfile.TemporaryDirectory() as root:
+            root = Path(root)
+            source = root / 'rap-brain'
+            resources = root / 'Manager.app' / 'Contents' / 'Resources'
+            state = root / 'backups'
+            source.mkdir()
+            resources.mkdir(parents=True)
+            (source / 'server.py').write_bytes(b'old')
+            launcher = resources / 'launch_manager.py'
+            launcher.write_bytes(b'old launcher')
+            (source / 'data').mkdir()
+            db = source / 'data' / 'rapbrain.sqlite3'
+            db.write_bytes(b'do not open')
+            app_code = b'print("new launcher")\n'
+            stream = io.BytesIO()
+            with zipfile.ZipFile(stream, 'w') as archive:
+                archive.writestr('app/launch_manager.py', app_code)
+                archive.writestr('server.py', self.payload)
+            self.archive = stream.getvalue()
+            self.manifest['archive_bytes'] = len(self.archive)
+            self.manifest['archive_sha256'] = digest(self.archive)
+            self.manifest['files'] = [
+                {'path': 'app/launch_manager.py',
+                 'baseline_sha256': digest(b'old launcher'),
+                 'payload_sha256': digest(app_code)},
+                {'path': 'server.py', 'baseline_sha256': digest(b'old'),
+                 'payload_sha256': digest(self.payload)}]
+            result = rehearse_on_copy(source, launcher, state,
+                                      self.signed(), self.archive,
+                                      pinned_key=self.pin, now=150)
+            self.assertEqual(result['state'], 'copy_rehearsal_passed')
+            self.assertEqual((source / 'server.py').read_bytes(), b'old')
+            self.assertEqual(launcher.read_bytes(), b'old launcher')
+            self.assertEqual(db.read_bytes(), b'do not open')
 
 
 if __name__ == '__main__':
