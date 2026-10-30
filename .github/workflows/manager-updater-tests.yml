@@ -21,7 +21,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run read-only updater unit tests
+      - name: Install signature verification dependency
+        run: python -m pip install -r manager-updater/requirements.txt
+      - name: Run updater tests on disposable fixtures
         run: python -m unittest discover -s manager-updater -p 'test_*.py' -v
   mac-python-tests:
     name: macOS Python transaction tests
@@ -32,10 +34,48 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install signature verification dependency
+        run: python -m pip install -r manager-updater/requirements.txt
       - name: Run updater regression suite on macOS
         run: python -m unittest discover -s manager-updater -p 'test_*.py' -v
       - name: Check integration fixture syntax without opening sockets
         run: python -m py_compile manager-updater/fixture_restart_lab.py manager-updater/fixture_transaction_restart_lab.py
+      - name: Build and verify disposable Finder bootstrap app
+        run: |
+          python -B manager-updater/build_first_bootstrap_app.py "$RUNNER_TEMP/Installer Rap Brain.app"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/Installer Rap Brain.app"
+          test -f "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/first_bootstrap_installer.py"
+          /bin/sh "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" -c 'import sys; assert sys.version_info >= (3, 10)'
+          /bin/sh "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" "$RUNNER_TEMP/Installer Rap Brain.app/Contents/Resources/updater/first_bootstrap_installer.py" --help >/dev/null
+      - name: Package and verify Finder installer archive
+        run: |
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/Installer Rap Brain.app" "$RUNNER_TEMP/Installer_Rap_Brain.zip"
+          mkdir "$RUNNER_TEMP/installer-verify"
+          /usr/bin/ditto -x -k "$RUNNER_TEMP/Installer_Rap_Brain.zip" "$RUNNER_TEMP/installer-verify"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/installer-verify/Installer Rap Brain.app"
+      - name: Build and verify disposable Creative trust installer
+        run: |
+          python -B manager-updater/build_creative_trust_app.py "$RUNNER_TEMP/Installer Creative Rap Brain.app"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/Installer Creative Rap Brain.app"
+          test -f "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/creative_trust_transaction.py"
+          test -f "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/trust_rotation_rehearsal.py"
+          /bin/sh "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/creative_trust_installer.py" --help >/dev/null
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/Installer Creative Rap Brain.app" "$RUNNER_TEMP/Installer_Creative_Rap_Brain.zip"
+          mkdir "$RUNNER_TEMP/creative-installer-verify"
+          /usr/bin/ditto -x -k "$RUNNER_TEMP/Installer_Creative_Rap_Brain.zip" "$RUNNER_TEMP/creative-installer-verify"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/creative-installer-verify/Installer Creative Rap Brain.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rapbrain-finder-installer-macos
+          path: ${{ runner.temp }}/Installer_Rap_Brain.zip
+          retention-days: 2
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rapbrain-creative-trust-installer-macos
+          path: ${{ runner.temp }}/Installer_Creative_Rap_Brain.zip
+          retention-days: 7
+          compression-level: 0
   mac-cryptokit:
     name: macOS CryptoKit identity test
     runs-on: macos-latest
