@@ -71,6 +71,16 @@ class PublisherTests(unittest.TestCase):
             path.chmod(0o644)
             self.assertFalse(key_file(path))
 
+    def test_search_finds_nested_creative_seed(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary).resolve(strict=True)
+            folder = home / 'Library' / 'Application Support' / 'RapBrainCreative' / 'keys'
+            folder.mkdir(parents=True)
+            path = folder / 'p8-private.seed'
+            path.write_bytes(b'x' * 32)
+            path.chmod(0o600)
+            self.assertIn(path, candidate_keys(home))
+
     def test_envelope_conforms_to_installed_release_gate(self):
         key = Ed25519PrivateKey.generate()
         public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)

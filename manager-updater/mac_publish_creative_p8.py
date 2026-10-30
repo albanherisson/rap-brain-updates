@@ -105,8 +105,10 @@ def fetch_pinned_gate(folder):
 
 def candidate_keys(home):
     support = home / 'Library' / 'Application Support'
-    roots = [support / 'RapBrainManager', support / 'RapBrain',
-             support / 'RapBrainCreativeEngine', home / 'Downloads']
+    roots = [support, home / 'Downloads', home / 'Documents',
+             home / '.config', home / '.local' / 'share',
+             home / '.rapbrain', home / '.rap-brain',
+             Path(tempfile.gettempdir()).resolve()]
     candidates = []
     override = os.environ.get('RAP_BRAIN_CREATIVE_KEY')
     if override:
@@ -117,14 +119,16 @@ def candidate_keys(home):
         for directory, folders, files in os.walk(root, followlinks=False):
             current = Path(directory)
             depth = len(current.relative_to(root).parts)
-            folders[:] = [name for name in folders if depth < 2 and
+            folders[:] = [name for name in folders if depth < 4 and
                 not (current / name).is_symlink() and
-                (root != home / 'Downloads' or
-                 re.search(r'rap.?brain|creative|publisher|key|p8', name, re.I))]
+                (depth != 0 or root not in (support, home / 'Downloads',
+                   home / 'Documents', Path(tempfile.gettempdir()).resolve()) or
+                 re.search(r'rap.?brain|creative|publisher|sign|key|p8', name, re.I))]
             for name in files:
                 path = current / name
-                if (re.search(r'key|ed25519|publisher', name, re.I) and
-                        path.suffix.lower() in ('.key', '.pem', '.bin', '.json')):
+                if (re.search(r'key|ed25519|publisher|private|sign|creative|p8', name, re.I) and
+                        path.suffix.lower() in ('', '.key', '.pem', '.bin', '.json',
+                                                '.seed', '.txt', '.der')):
                     candidates.append(path)
                 if len(candidates) > 200:
                     raise ValueError('publisher_key_search_limit')
@@ -147,6 +151,17 @@ def sign_with_key(path, message, folder):
     if not key_file(path):
         return None
     raw = path.read_bytes()
+    if raw.startswith(b'{'):
+        try:
+            record = json.loads(raw)
+            value = next((record[name] for name in
+                ('private_key_base64', 'seed_base64', 'private_key', 'seed')
+                if type(record) is dict and type(record.get(name)) is str), None)
+            raw = value.encode('ascii') if value is not None else b''
+        except (ValueError, UnicodeError):
+            return None
+    if re.fullmatch(rb'[0-9a-fA-F]{64}\s*', raw):
+        raw = bytes.fromhex(raw.strip().decode('ascii'))
     try:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -188,11 +203,16 @@ def sign_with_key(path, message, folder):
 
 def sign_existing_identity(message, folder, *, home=None):
     home = Path.home() if home is None else home
-    for path in candidate_keys(home):
+    candidates = candidate_keys(home)
+    safe = 0
+    for path in candidates:
+        if key_file(path):
+            safe += 1
         signed = sign_with_key(path, message, folder)
         if signed is not None and signed[0] == PUBLIC:
             return signed[1]
-    raise ValueError('p8_publisher_key_not_found')
+    raise ValueError('p8_publisher_key_not_found candidates=' + str(len(candidates)) +
+                     ' private_files=' + str(safe))
 
 
 def make_envelope(payload, signature):
