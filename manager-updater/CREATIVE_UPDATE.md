@@ -57,8 +57,12 @@ Creative manifest and archive are on `gh-pages` at
 `5e335f263adfa8a99dd61d253876532a35f7ed20`. At publication time, the
 GitHub Pages URL still returned HTTP 404 because Pages was not configured.
 No production rotation or P8 code has been installed. The remaining gates are
-Pages activation, public fetch verification, owner-side copy rehearsal and
-then owner validation of the real Finder installation.
+Pages activation, public fetch verification, owner-side validation of the
+Finder installation, and P8 installation. The Finder installer now invokes
+`trust_rotation_rehearsal.py` first: it copies the owner's app and two code
+files, generates only synthetic SQLite/configuration, executes the signed
+rotation against that copy, and proves exact restoration before any real
+replacement. Its macOS CI fixture is pending validation.
 
 The sections below record the earlier implementation stages and their status
 at the time; statements such as “no first bootstrap installed” there are

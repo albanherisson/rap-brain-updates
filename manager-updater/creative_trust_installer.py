@@ -12,6 +12,7 @@ from creative_transaction import safe_path
 from creative_trust_rotation import verify_rotation
 from creative_trust_transaction import OfflineTrustRotation
 from mac_offline_bootstrap_gate import assert_offline
+from trust_rotation_rehearsal import rehearse_on_copy
 
 
 CHANNEL = ('https://raw.githubusercontent.com/albanherisson/rap-brain-updates/'
@@ -35,7 +36,8 @@ def download():
     return raw
 
 
-def install_from_channel(source, launcher, state, *, downloader=download):
+def install_from_channel(source, launcher, state, *, downloader=download,
+                         rehearsal=rehearse_on_copy):
     source = safe_path(source, directory=True)
     launcher = safe_path(launcher)
     assert_offline(source, launcher)
@@ -46,6 +48,7 @@ def install_from_channel(source, launcher, state, *, downloader=download):
         return transaction.install(b'')
     raw = downloader()
     verify_rotation(raw, safe_path(launcher.parent / 'creative_release.py').read_bytes())
+    rehearsal(source, launcher, state, raw)
     return transaction.install(raw)
 
 

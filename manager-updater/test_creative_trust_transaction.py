@@ -14,6 +14,7 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 import creative_trust_rotation as rotation
 import creative_trust_transaction as transaction_module
+from trust_rotation_rehearsal import rehearse_on_copy
 from creative_release import canonical
 from creative_trust_transaction import OfflineTrustRotation
 
@@ -172,6 +173,30 @@ class RotationTransactionTests(unittest.TestCase):
         self.assertEqual(inventory(self.app), before)
         subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
                         str(self.app)], check=True, capture_output=True)
+        self.unchanged_data()
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'requires macOS codesign')
+    def test_rehearsal_uses_real_app_copy_and_synthetic_database(self):
+        (self.app / 'Contents' / 'Info.plist').write_bytes(plistlib.dumps({
+            'CFBundleIdentifier': 'org.rapbrain.disposable-trust-rehearsal',
+            'CFBundleExecutable': 'DisposableRapBrain',
+            'CFBundleName': 'Disposable Rap Brain',
+            'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1'}))
+        native = self.app / 'Contents' / 'MacOS' / 'DisposableRapBrain'
+        native.write_bytes(Path('/bin/echo').read_bytes())
+        native.chmod(0o755)
+        subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
+                        str(self.app)], check=True, capture_output=True)
+        from app_bundle_backup import inventory
+        before = inventory(self.app)
+        with patch.object(rotation, 'PUBLISHER_PIN', self.publisher_pin), \
+                patch.object(transaction_module, 'SERVER_SHA256',
+                    rotation.digest((self.source / 'server.py').read_bytes())):
+            result = rehearse_on_copy(self.source, self.launcher, self.state,
+                                      self.manifest)
+        self.assertEqual(result['state'], 'passed')
+        self.assertEqual(inventory(self.app), before)
+        self.assertEqual(self.target.read_bytes(), self.original)
         self.unchanged_data()
 
 
