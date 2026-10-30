@@ -15,6 +15,7 @@ import zipfile
 from bootstrap_release import PUBLISHER_PIN
 from bootstrap_runtime_resources import RUNTIME_FILES
 from creative_release import Refused, canonical, digest
+from creative_transaction import safe_path
 from ed25519_runtime import verify_signature
 from strict_json import parse_signed_json
 
@@ -153,6 +154,21 @@ def verify_archive(raw, manifest):
             SyntaxError) as exc:
         raise Refused('manager_archive_invalid') from exc
     return files
+
+
+def verify_baseline(manifest, source, resources):
+    """Bind a signed release to exact installed code, without opening data."""
+    source = safe_path(source, directory=True)
+    resources = safe_path(resources, directory=True)
+    targets = {}
+    for entry in manifest['files']:
+        path = (resources / entry['path'][4:] if entry['path'].startswith('app/')
+                else source / entry['path'])
+        target = safe_path(path)
+        if digest(target.read_bytes()) != entry['baseline_sha256']:
+            raise Refused('manager_baseline_changed')
+        targets[entry['path']] = target
+    return targets
 
 
 def download_release(*, minimum_sequence=0, downloader=fetch,

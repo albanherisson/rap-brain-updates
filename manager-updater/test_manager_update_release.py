@@ -2,6 +2,8 @@
 import base64
 import io
 import json
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -11,7 +13,7 @@ from cryptography.hazmat.primitives import serialization
 
 from creative_release import Refused, canonical, digest
 from manager_update_release import (CHANNEL, download_release, verify_archive,
-                                    verify_manifest)
+                                    verify_baseline, verify_manifest)
 
 
 class ManagerReleaseTest(unittest.TestCase):
@@ -111,6 +113,22 @@ class ManagerReleaseTest(unittest.TestCase):
                 downloader=downloader, pinned_key=self.pin)
         self.assertEqual(calls, [CHANNEL, self.manifest['archive_url']])
         self.assertEqual(files, {'server.py': self.payload})
+
+    def test_baseline_reads_only_selected_code(self):
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / 'rap-brain'
+            resources = Path(root) / 'resources'
+            source.mkdir()
+            resources.mkdir()
+            (source / 'server.py').write_bytes(b'old')
+            (source / 'data').mkdir()
+            (source / 'data' / 'rapbrain.sqlite3').write_bytes(b'untouched')
+            manifest = self.verify()
+            self.assertEqual(verify_baseline(manifest, source, resources),
+                             {'server.py': source / 'server.py'})
+            (source / 'server.py').write_bytes(b'changed')
+            with self.assertRaises(Refused):
+                verify_baseline(manifest, source, resources)
 
 
 if __name__ == '__main__':
