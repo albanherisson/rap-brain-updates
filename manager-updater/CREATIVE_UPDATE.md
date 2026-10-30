@@ -90,9 +90,11 @@ The Creative Engine P8/P10 fingerprint is
 `ae32610121418b50adcc8726df567a22ed7b3af67f804ef9aaaa7a1a4efce504`.
 
 Do not replace one with the other, silently trust a downloaded public key, or
-upload a private key. Creative Engine releases retain the P10 trust identity.
-Test fixtures generate ephemeral keys and explicitly inject their pins; these
-keys are never accepted by the production default.
+upload a private key. The installed Creative verifier still pins the P10
+identity. A new, distinct Creative key would be accepted only after a separate
+Manager-signed trust rotation and guarded app installation. Test fixtures
+generate ephemeral keys and explicitly inject their pins; these keys are never
+accepted by the production default.
 
 ## Not implemented or shipped
 
