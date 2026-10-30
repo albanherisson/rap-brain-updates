@@ -58,12 +58,23 @@ jobs:
           python -B manager-updater/build_creative_trust_app.py "$RUNNER_TEMP/Installer Creative Rap Brain.app"
           /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/Installer Creative Rap Brain.app"
           test -f "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/creative_trust_transaction.py"
+          test -f "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/trust_rotation_rehearsal.py"
           /bin/sh "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/creative_trust_installer.py" --help >/dev/null
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/Installer Creative Rap Brain.app" "$RUNNER_TEMP/Installer_Creative_Rap_Brain.zip"
+          mkdir "$RUNNER_TEMP/creative-installer-verify"
+          /usr/bin/ditto -x -k "$RUNNER_TEMP/Installer_Creative_Rap_Brain.zip" "$RUNNER_TEMP/creative-installer-verify"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/creative-installer-verify/Installer Creative Rap Brain.app"
       - uses: actions/upload-artifact@v4
         with:
           name: rapbrain-finder-installer-macos
           path: ${{ runner.temp }}/Installer_Rap_Brain.zip
           retention-days: 2
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rapbrain-creative-trust-installer-macos
+          path: ${{ runner.temp }}/Installer_Creative_Rap_Brain.zip
+          retention-days: 7
           compression-level: 0
   mac-cryptokit:
     name: macOS CryptoKit identity test
