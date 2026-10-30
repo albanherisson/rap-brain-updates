@@ -19,12 +19,13 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import urllib.request
 
 
 REPOSITORY = 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/'
-PINS_COMMIT = 'c198d8f3bcea6cb3caf0d1be0450b7a651c29652'
-PINS_SHA256 = '5219cebc7a561363140a843e10b212076c817ac91fbac6c7a2474f18e88ec26e'
+PINS_COMMIT = '9ea6312219ac9b795d4da79cb6281f932ca3ea83'
+PINS_SHA256 = '93623ea4d6a85019caf5eeeb2b6067d3fb3c77fff56ecf4411f61ebadb70b21c'
 SWIFT_SHA256 = 'e585f5325f060dc2cc2877d533fd2b94b056dcb8bf5f6785c8ba7bf59ee4d6b1'
 EXPECTED_CANDIDATES = (
     'e7947990aec65830375b5e5e5fb6241f0161ead56309c970a8cc7c0970e56f27',
@@ -62,7 +63,7 @@ def get_inputs(updater):
     pins = json.loads(raw)
     if (type(pins) is not dict or pins.keys() != {'schema', 'commit', 'files'} or
             pins['schema'] != 'rapbrain-disposable-bootstrap-pins-v1' or
-            pins['commit'] != '30a390751042a28680a3eb58d8d4773eeec79e1c' or
+            pins['commit'] != 'e099e16a8bbb4a2730e2df767080e482d907481d' or
             type(pins['files']) is not dict or len(pins['files']) != 40 or
             not {'mac_final_readonly_probe.py', 'bootstrap_full_packager.py',
                  'offline_bootstrap_lifecycle.py',
@@ -294,9 +295,12 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as exc:
+        frame = traceback.extract_tb(exc.__traceback__)[-1]
+        location = Path(frame.filename).name + ':' + str(frame.lineno)
         if isinstance(exc, KeyError) and len(exc.args) == 1:
             exc = ValueError('public_input_missing_' + str(exc.args[0]))
         print('TEST REFUSE : ' + type(exc).__name__ + ' / ' +
-              (str(exc) if isinstance(exc, ValueError) else 'validation_failed'),
+              (str(exc) if isinstance(exc, ValueError) else 'validation_failed') +
+              ' / ' + location,
               file=sys.stderr)
         raise SystemExit(2)
