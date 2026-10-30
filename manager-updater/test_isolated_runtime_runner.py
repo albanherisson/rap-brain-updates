@@ -7,6 +7,7 @@ import unittest
 
 from creative_release import Refused, digest
 from isolated_runtime_runner import run_disposable
+from authenticated_runtime_client import assert_owned_listener
 
 
 FIXTURE = b'''import os
@@ -46,7 +47,14 @@ class RunnerTests(unittest.TestCase):
             source.mkdir(parents=True)
             (source / 'server.py').write_bytes(FIXTURE)
             try:
-                options = ({} if sys.platform == 'darwin' else
+                def checked_listener(port, pid):
+                    try:
+                        return assert_owned_listener(port, pid)
+                    except Refused:
+                        inspect = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port}', '-sTCP:LISTEN', '-Fp'], capture_output=True, text=True)
+                        (home / 'fixture-listener').write_text(f'expected={pid}; rc={inspect.returncode}; stdout={inspect.stdout[:400]!r}; stderr={inspect.stderr[:400]!r}')
+                        raise
+                options = ({'listener_check': checked_listener} if sys.platform == 'darwin' else
                            {'listener_check': lambda port, pid: True})
                 report = run_disposable(source, home, digest(FIXTURE), timeout=8,
                                         **options)
@@ -58,7 +66,8 @@ class RunnerTests(unittest.TestCase):
                 prebind = home / 'fixture-prebind'
                 port_text = marker.read_text() if marker.exists() else ''
                 inspect = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port_text}', '-sTCP:LISTEN', '-Fp'], capture_output=True, text=True) if port_text.isdecimal() else None
-                detail = f'rc={inspect.returncode}; stdout={inspect.stdout[:400]!r}; stderr={inspect.stderr[:400]!r}' if inspect else 'no port'
+                observed = home / 'fixture-listener'
+                detail = observed.read_text() if observed.exists() else (f'rc={inspect.returncode}; stdout={inspect.stdout[:400]!r}; stderr={inspect.stderr[:400]!r}' if inspect else 'no port')
                 self.fail(f'{exc}; listener={detail}; prebind={prebind.exists()}; bind_error={bind_error.read_text() if bind_error.exists() else "missing"}; child_started={marker.exists()}; '
                           f'port={marker.read_text() if marker.exists() else "missing"}; '
                           f'bound={bound.read_text() if bound.exists() else "missing"}; '
