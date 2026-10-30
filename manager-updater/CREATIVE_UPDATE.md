@@ -46,9 +46,14 @@ SQLite/config backup and restore drill, app signing, exact rollback, and
 pending-attempt recovery. Disposable success/failure/crash tests pass locally;
 the actual macOS signing/rollback fixture is pending CI. A separate Finder
 installer builder and offline entrypoint are staged for those CI checks.
-No production rotation has been signed, published or installed. The next work
-is Mac copy validation, publisher key creation and a signed release from that
-new Creative key.
+The macOS CI fixture passed real app signing and exact restore on a copy.
+`mac_prepare_creative_publication.py` prepares one public ZIP containing the
+Manager-signed rotation, a separately signed Creative production manifest,
+and the one-file P8 engine archive. It creates two private, owner-only copies
+of the new Creative seed on the Mac and verifies both signatures locally.
+It has not run on the owner's Mac. No production rotation has been signed,
+published or installed. The next gates are Mac publisher execution, public
+release upload, isolated installation rehearsal and owner validation.
 
 The sections below record the earlier implementation stages and their status
 at the time; statements such as “no first bootstrap installed” there are
