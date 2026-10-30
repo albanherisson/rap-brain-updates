@@ -2,6 +2,7 @@
 import base64
 import io
 import json
+import os
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -18,6 +19,7 @@ from bootstrap_full_transaction import FullBootstrapTransaction
 from bootstrap_runtime_resources import RUNTIME_FILES
 from creative_release import Refused, canonical, digest
 from offline_bootstrap_lifecycle import MacOfflineBootstrapLifecycle
+from owned_graceful_stop import StoppedLease
 from first_bootstrap_installer import install_from_channel
 from test_bootstrap_transaction import OfflineFixture, IDENTIFIER
 
@@ -185,6 +187,46 @@ class FullTransactionTests(unittest.TestCase):
         self.assertEqual(result['state'], 'committed')
         self.assertFalse((self.state / 'maintenance.ticket').exists())
         self.assertFalse((self.state / 'bootstrap-intent.json').exists())
+        self.assert_data_preserved()
+
+    def test_terminal_commit_closes_live_candidate_stopped_lease(self):
+        class Candidate:
+            def __init__(self, *_args, **_kwargs):
+                self.lock = None
+                self.current = None
+                self.start = 'fixture-start'
+                self.token = 'c' * 64
+
+            def start_and_check(self):
+                self.lock.release_to_ticketed_candidate()
+                self.current = type('Running', (), {'poll': lambda self: None})()
+                return True
+
+        inspector = lambda *_: {'server_process_seen': False,
+                                'manager_process_seen': False,
+                                'port_8765_listening': False}
+        stopped = []
+
+        def fake_owned_stop(**_kwargs):
+            fd = os.open(self.state / 'update.lock', os.O_RDWR | os.O_NOFOLLOW)
+            lease = StoppedLease(fd, 5100, 5101)
+            stopped.append(lease)
+            return lease
+
+        lifecycle = MacOfflineBootstrapLifecycle(
+            self.source, self.launcher, self.state, self.manifest,
+            inspector=inspector, signer=lambda *_a, **_k: True,
+            candidate_factory=Candidate)
+        transaction = FullBootstrapTransaction(
+            self.source, self.launcher, self.state, lifecycle, pinned_key=self.pin)
+        a, b, c = self.prepared()
+        with a, b, c, patch('offline_bootstrap_lifecycle.graceful_stop_owned',
+                            side_effect=fake_owned_stop):
+            result = transaction.install(self.signed, self.archive)
+        self.assertEqual(result['state'], 'committed')
+        self.assertEqual(len(stopped), 1)
+        self.assertIsNone(stopped[0].fd)
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
         self.assert_data_preserved()
 
     def test_offline_lifecycle_restores_original_and_clears_ticket_on_failed_health(self):

@@ -35,10 +35,13 @@ class StoppedLease:
     def __enter__(self):
         return self
 
-    def __exit__(self, *_):
+    def close(self):
         if self.fd is not None:
             os.close(self.fd)
             self.fd = None
+
+    def __exit__(self, *_):
+        self.close()
 
 
 def _stop_response(raw):
