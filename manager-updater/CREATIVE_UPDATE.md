@@ -643,7 +643,7 @@ before publication: it authenticates the same immutable read-only preparers,
 copies the already installed Beta 14 app to a temporary directory, verifies
 its original signature, signs the prepared launcher/dashboard in that copy,
 then restores and verifies the copied original. It reads the source hashes
-but does not run the server or open data. This rehearsal has not been run on
+but does not run the server or open data. This rehearsal passed on
 the owner's Mac on October 29, 2026: the candidate copy was signed, then the
 copied original was restored and signature-verified. The original app, server,
 database and running processes were not modified by the probe. This does not
@@ -662,16 +662,24 @@ system `/usr/bin/xattr` hex interface on macOS with bounded output and exact
 binary round trips; the standalone probe uses the same native tool. This fix
 passed macOS CI regression in run 40948958070, including the exact probe copy
 method on a signed shell helper; the subsequent owner copy probe passed too.
-Remaining gates include a real isolated server/runtime rehearsal, a production
-release signed by the existing publisher key, and an offline owner installation.
+Remaining gates include a production release signed by the existing publisher
+key and an offline owner installation.
 
-The next runtime rehearsal must run from a disposable copy under a temporary
+The isolated runtime rehearsal ran on the owner's Mac on October 30, 2026.
+The pinned candidate served `/api/status` from a temporary home on a separate
+port; four Python modules were staged, and the probe reported the active
+server identical and no active database or configuration opened. This proves
+startup and HTTP health of the candidate in a disposable setting. It does not
+prove a production stop/restart, real update rollback, worker job completion,
+or a Creative Engine Ollama result.
+
+The runtime rehearsal runs from a disposable copy under a temporary
 `HOME`, with a temporary `Downloads/rap-brain/data` and private update state.
-It must use a free loopback port distinct from the active server, prove that
-the worker and shutdown paths terminate, and compare active source/app hashes
-before and after. Do not launch the prepared candidate directly from the
+It uses a free loopback port distinct from the active server and compares the
+active server hash before and after. The worker and production shutdown paths
+still need their own validation. Do not launch the prepared candidate directly from the
 owner's active source tree: its startup paths derive from `Path.home()` and
-could otherwise reach the owner's data or update markers. A failure of the
-isolated rehearsal cannot be promoted into a signed production claim.
+could otherwise reach the owner's data or update markers. An isolated success
+must not be promoted into a claim about the untested production lifecycle.
 
 Run tests: `python -m unittest discover -s manager-updater -p 'test_*.py' -v`.
