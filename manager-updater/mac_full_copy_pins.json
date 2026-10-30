@@ -1,5 +1,5 @@
 {
-  "commit": "30a390751042a28680a3eb58d8d4773eeec79e1c",
+  "commit": "e099e16a8bbb4a2730e2df767080e482d907481d",
   "files": {
     "app_bundle_backup.py": "36a399f1c152d8bc787b34595d67cd8c9fa9ccce0f8fc462e4c612c1480ef3ef",
     "app_xattrs.py": "1ab620324708bba65dc3fea35a94d2c10f7836ecbc640587582f176f03dbecdf",
@@ -27,7 +27,7 @@
     "mac_final_readonly_probe.py": "41ab50fd232d92e6ec1a803b517efbc9cd331eef687eeda601c05c35dfcf746f",
     "mac_offline_bootstrap_gate.py": "c1d510db7ce43ffe4c137e1951b0f75e2fcc2cc9c4c1d383ef993601fdc1476d",
     "offline_bootstrap_lifecycle.py": "8891d3c8f21e44d9c627fe0b2fee1918a6a65cdc6e13c6fa80c080c962d51a92",
-    "owned_graceful_stop.py": "5e5c12bd4e6317aca9bee143d2c1c72b9789d8e8f9b50ef517a5f125e8e4dfba",
+    "owned_graceful_stop.py": "410ec099f97bba7d8bfc49de1aac2a3f8a8efe0ae4300f2352b7a1ead931a3c6",
     "owned_guarded_lifecycle.py": "20dd60df5964aedda126d75aa42c1cf660ab6199bd5f78d9bb4d1b677cc20c69",
     "owned_supervisor_binding.py": "51a730c9fc09dd8cf32a55abd91ebf75c37a25af6d5cb85cd77e725b7eff0ab5",
     "pending_attempt_recovery.py": "b23d13925021234b46f4f71c175eb5b25c41ef1016f386043fdb94a9ef5d546d",
