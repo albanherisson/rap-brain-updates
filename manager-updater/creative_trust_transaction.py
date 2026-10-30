@@ -132,13 +132,15 @@ class OfflineTrustRotation:
         current = inventory(self.app)
         allowed = {'Contents/Resources/creative_release.py',
                    'Contents/_CodeSignature/CodeResources'}
+        changed = sorted(name for name, entry in original.items()
+                         if name in current and name not in allowed and
+                         current[name]['sha256'] != entry['sha256'])
         if (set(current) - set(original) - allowed or
                 set(original) - set(current) - allowed or
                 current.get('Contents/Resources/creative_release.py', {}).get('sha256') !=
                     candidate_hash or
-                any(current[name]['sha256'] != entry['sha256']
-                    for name, entry in original.items() if name not in allowed)):
-            raise Refused('trust_rotation_unexpected_app_change')
+                changed):
+            raise Refused('trust_rotation_unexpected_app_change:' + ','.join(changed[:8]))
         args = {'inspector': self.inspector} if self.inspector else {}
         if self.candidate_verifier(self.app, self.source, self.launcher, **args) is not True:
             raise Refused('trust_rotation_candidate_signature')
