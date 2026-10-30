@@ -609,11 +609,14 @@ health. `offline_bootstrap_lifecycle.py` joins a private intent/ticket, an
 exclusive lifetime lock, repeated offline process checks, local app signing,
 ticketed owned candidate health, and terminal marker removal. A restored
 original remains stopped and its existing app signature is checked without
-re-signing. This lifecycle passes disposable fixtures, but its actual Mac
-stop/restart, process census, code-signing and crash recovery are not yet
-owner-validated; no production installer calls it and no release is signed.
+re-signing. On October 30 the owner ran the full transaction twice on copies
+with a separate home, port and SQLite fixture. The commit, authenticated HTTP
+health, local app signature, forced failed-health rollback, exact app restore
+and stopped candidate all passed. The first two rehearsals exposed a missing
+dynamically loaded resource and a stopped-lease close method; both were fixed
+before the successful complete rehearsal. No live installation has occurred.
 
-`first_bootstrap_installer.py` now connects a fixed GitHub Pages bootstrap
+`first_bootstrap_installer.py` now connects a fixed GitHub raw bootstrap
 channel to the full verifier, repeated offline gate, lifecycle and transaction.
 It refuses the owner's current active server/Manager state before any network
 request. The signed v2 manifest binds a single archive URL under
@@ -622,8 +625,9 @@ active baseline before fetching the archive, rejecting redirects and size
 changes. The entrypoint requires an explicit install flag; no production
 manifest or archive has been published and it must not be run on the Mac yet.
 Disposable tests cover the orchestration, signature-before-download order and
-rollback. Actual owner-Mac runtime validation and signing with the existing
-local Manager publisher key are still prerequisites.
+rollback. The owner-Mac copy rehearsal passed, while signing with the existing
+local Manager publisher key, publishing the final archive and real installation
+remain prerequisites.
 On a repeat launch with a nonterminal journal, the entrypoint first verifies
 the saved signed manifest against its saved original files and resumes the
 same attempt without accessing the GitHub channel. A crash before the saved

@@ -22,7 +22,8 @@ from strict_json import parse_signed_json
 PRIMARY = ('server.py', 'launch_manager.py', 'dashboard_beta14.html')
 FILES = PRIMARY + RUNTIME_FILES
 HEX = set('0123456789abcdef')
-CHANNEL = 'https://albanherisson.github.io/rap-brain-updates/manager-bootstrap/manifest.json'
+CHANNEL = ('https://raw.githubusercontent.com/albanherisson/'
+           'rap-brain-updates/main/manager-bootstrap/manifest.json')
 
 
 def hex_digest(value):
@@ -33,10 +34,11 @@ def allowed_archive_url(url):
     if type(url) is not str:
         raise Refused('bootstrap_archive_url')
     parsed = urlsplit(url)
-    name = parsed.path.removeprefix('/rap-brain-updates/manager-bootstrap/')
-    if (parsed.scheme != 'https' or parsed.netloc != 'albanherisson.github.io' or
+    prefix = '/albanherisson/rap-brain-updates/main/manager-bootstrap/'
+    name = parsed.path.removeprefix(prefix)
+    if (parsed.scheme != 'https' or parsed.netloc != 'raw.githubusercontent.com' or
             parsed.query or parsed.fragment or
-            parsed.path != '/rap-brain-updates/manager-bootstrap/' + name or
+            parsed.path != prefix + name or
             not 1 <= len(name) <= 80 or not name.endswith('.zip') or
             any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-.'
                 for c in name)):

@@ -79,7 +79,7 @@ class FullTransactionTests(unittest.TestCase):
             'sequence': 1, 'issued_at': now - 1, 'expires_at': now + 3600,
             'production_install_authorized': True, 'data_migrations': [],
             'validation': {'isolated_rollback': 'passed', 'macos_runtime': 'passed'},
-            'archive_url': 'https://albanherisson.github.io/rap-brain-updates/manager-bootstrap/guarded-1.zip',
+            'archive_url': 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/main/manager-bootstrap/guarded-1.zip',
             'archive_sha256': digest(self.archive), 'archive_bytes': len(self.archive),
             'runtime_sha256': {name: digest(self.after[name]) for name in RUNTIME_FILES}}
         for kind, path in zip(('server', 'launcher', 'dashboard'), PRIMARY):

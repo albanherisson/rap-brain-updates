@@ -45,7 +45,7 @@ class FullReleaseTests(unittest.TestCase):
             'sequence': 1, 'issued_at': now - 1, 'expires_at': now + 3600,
             'production_install_authorized': True, 'data_migrations': [],
             'validation': {'isolated_rollback': 'passed', 'macos_runtime': 'passed'},
-            'archive_url': 'https://albanherisson.github.io/rap-brain-updates/manager-bootstrap/guarded-1.zip',
+            'archive_url': 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/main/manager-bootstrap/guarded-1.zip',
             'archive_sha256': digest(self.archive), 'archive_bytes': len(self.archive),
             'runtime_sha256': {name: digest(self.after[name]) for name in RUNTIME_FILES}}
         for name, path in (('server', 'server.py'), ('launcher', 'launch_manager.py'),
@@ -79,10 +79,11 @@ class FullReleaseTests(unittest.TestCase):
                                              'dashboard_beta14.html')),
             pinned_key=self.pin)['archive_url'], self.payload['archive_url'])
 
-    def test_distribution_url_stays_on_pinned_github_pages_directory(self):
+    def test_distribution_url_stays_on_pinned_github_repository_directory(self):
         for url in ('https://evil.example/guarded-1.zip',
-                    'https://albanherisson.github.io/rap-brain-updates/creative-stable/x.zip',
-                    'https://albanherisson.github.io/rap-brain-updates/manager-bootstrap/x.zip?next=1'):
+                    'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/main/creative-stable/x.zip',
+                    'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/other/manager-bootstrap/x.zip',
+                    'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/main/manager-bootstrap/x.zip?next=1'):
             with self.assertRaisesRegex(Refused, 'bootstrap_archive_url'):
                 allowed_archive_url(url)
 
