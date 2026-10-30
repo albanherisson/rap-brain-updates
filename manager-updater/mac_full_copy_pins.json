@@ -15,6 +15,7 @@
     "bootstrap_release.py": "c351815083a52399558ab2e7c8228299f54bcda412c0c57443895dfc4b6c2df9",
     "bootstrap_runtime_resources.py": "a0f6b4dc60d95c6374f9f5468b2636665a7c435e95f044f274bb747e31299dfc",
     "bootstrap_transaction.py": "4e334fea1672b90252ca4206ce2405363a1643afed2788d3695f0de09a96f137",
+    "creative_install_controller.py": "1a97880e237ef09e15531d4e23efb35a6b48d16a4696eb5ef53fbb111c6d8d10",
     "creative_readiness.py": "234cf612a739bcaaa9ef77c84cc4917b52655c68e59093af33ebbf524a68b74f",
     "creative_release.py": "b50195f6665baefd1838f5aec2e750ed33504804d80c6f09bd493aa20ce779a9",
     "creative_shutdown_policy.py": "5fc0bbe15f3c84b23c2998230f9fbf0a343fa34556452803fb4a83d94eb6925c",
