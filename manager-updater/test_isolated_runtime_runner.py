@@ -1,4 +1,5 @@
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import sys
@@ -55,7 +56,10 @@ class RunnerTests(unittest.TestCase):
                 bound = home / 'fixture-bound'
                 bind_error = home / 'fixture-bind-error'
                 prebind = home / 'fixture-prebind'
-                self.fail(f'{exc}; prebind={prebind.exists()}; bind_error={bind_error.read_text() if bind_error.exists() else "missing"}; child_started={marker.exists()}; '
+                port_text = marker.read_text() if marker.exists() else ''
+                inspect = subprocess.run(['/usr/sbin/lsof', '-nP', f'-iTCP:{port_text}', '-sTCP:LISTEN', '-Fp'], capture_output=True, text=True) if port_text.isdecimal() else None
+                detail = f'rc={inspect.returncode}; stdout={inspect.stdout[:400]!r}; stderr={inspect.stderr[:400]!r}' if inspect else 'no port'
+                self.fail(f'{exc}; listener={detail}; prebind={prebind.exists()}; bind_error={bind_error.read_text() if bind_error.exists() else "missing"}; child_started={marker.exists()}; '
                           f'port={marker.read_text() if marker.exists() else "missing"}; '
                           f'bound={bound.read_text() if bound.exists() else "missing"}; '
                           f'request={requested.read_text() if requested.exists() else "missing"}')
