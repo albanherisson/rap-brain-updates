@@ -56,6 +56,23 @@ def fetch(commit, name, expected):
     return name, raw
 
 
+def fetch_trusted_signer(folder):
+    """Recover the same fingerprinted public signer after macOS clears /tmp."""
+    url = REPOSITORY + SOURCE_COMMIT + '/publisher/publisher_key.swift'
+    with urllib.request.urlopen(url, timeout=25) as response:
+        if response.status != 200 or response.geturl() != url:
+            raise ValueError('publisher_signer_source_changed')
+        raw = response.read(50_001)
+    if digest(raw) != SIGNER_SHA256:
+        raise ValueError('publisher_signer_fingerprint_changed')
+    target = folder / 'publisher_key.swift'
+    fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                 0o600)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(raw)
+    return target
+
+
 def get_inputs(folder):
     _, raw = fetch(PINS_COMMIT, 'mac_publisher_release_pins.json', PINS_SHA256)
     pins = json.loads(raw)
@@ -133,12 +150,20 @@ def transfer_bundle(manifest, archive):
 def trusted_signer(home, folder):
     key = home / 'Library/Application Support/RapBrainManager/publisher_ed25519.key'
     swift = Path('/tmp/rapbrain_publisher_key.swift')
-    for path, size in ((key, 32), (swift, 50_000)):
+    if not key.exists():
+        raise ValueError('publisher_private_key_missing')
+    for path, size in ((key, 32),):
         info = path.lstat()
         if (path.is_symlink() or not stat.S_ISREG(info.st_mode) or
                 info.st_uid != os.getuid() or not 0 < info.st_size <= size):
             raise ValueError('publisher_signer_or_key_unsafe')
-    if (key.stat().st_size != 32 or key.stat().st_mode & 0o077 or
+    if key.stat().st_size != 32 or key.stat().st_mode & 0o077:
+        raise ValueError('publisher_signer_or_key_changed')
+    if not swift.exists():
+        swift = fetch_trusted_signer(folder)
+    info = swift.lstat()
+    if (swift.is_symlink() or not stat.S_ISREG(info.st_mode) or
+            info.st_uid != os.getuid() or not 0 < info.st_size <= 50_000 or
             digest(swift.read_bytes()) != SIGNER_SHA256):
         raise ValueError('publisher_signer_or_key_changed')
 

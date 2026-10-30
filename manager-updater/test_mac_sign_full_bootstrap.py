@@ -2,6 +2,7 @@ import base64
 from io import BytesIO
 import json
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -11,7 +12,9 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from bootstrap_full_release import PRIMARY, RUNTIME_FILES, verify_full_bootstrap
 from creative_release import Refused, digest
-from mac_sign_full_bootstrap import create_signed_release, transfer_bundle
+from mac_sign_full_bootstrap import (SIGNER_SHA256, create_signed_release,
+                                     fetch_trusted_signer, transfer_bundle,
+                                     trusted_signer)
 
 
 class PublisherTransferTests(unittest.TestCase):
@@ -66,6 +69,41 @@ class PublisherTransferTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'publisher_identity_invalid'):
                 create_signed_release(self.originals, self.runtime, self.public,
                                       self.key.sign, 1_800_000_000)
+
+    def test_missing_key_refused_without_generating_another_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            with self.assertRaisesRegex(ValueError, 'publisher_private_key_missing'):
+                trusted_signer(home, home)
+            self.assertEqual(list(home.iterdir()), [])
+
+    def test_public_signer_fingerprint_and_redirect_are_checked(self):
+        source = (Path(__file__).parent.parent / 'publisher' /
+                  'publisher_key.swift').read_bytes()
+        self.assertEqual(digest(source), SIGNER_SHA256)
+        class Response:
+            status = 200
+            def __init__(self, url):
+                self.url = url
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def geturl(self):
+                return self.url
+            def read(self, _limit):
+                return source
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch('mac_sign_full_bootstrap.urllib.request.urlopen',
+                       side_effect=lambda url, timeout: Response(url)):
+                signer = fetch_trusted_signer(Path(tmp))
+            self.assertEqual(signer.read_bytes(), source)
+            self.assertEqual(signer.stat().st_mode & 0o777, 0o600)
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch('mac_sign_full_bootstrap.urllib.request.urlopen',
+                       side_effect=lambda url, timeout: Response(url + '?redirect')):
+                with self.assertRaisesRegex(ValueError, 'publisher_signer_source_changed'):
+                    fetch_trusted_signer(Path(tmp))
 
 
 if __name__ == '__main__':
