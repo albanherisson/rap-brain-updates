@@ -1,6 +1,0 @@
-RAP-BRAIN-PUBLISHER-IDENTITY-PROOF-v1
-publisher=albanherisson
-channel=rap-brain-updates
-purpose=verify-ownership-of-ed25519-publishing-key-only
-install_allowed=false
-nonce=b03c3f49c0a7af90816513f08226edbd
