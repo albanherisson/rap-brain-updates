@@ -3,13 +3,15 @@ import base64
 import io
 import json
 import unittest
+from unittest.mock import patch
 import zipfile
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives import serialization
 
 from creative_release import Refused, canonical, digest
-from manager_update_release import verify_archive, verify_manifest
+from manager_update_release import (CHANNEL, download_release, verify_archive,
+                                    verify_manifest)
 
 
 class ManagerReleaseTest(unittest.TestCase):
@@ -90,6 +92,25 @@ class ManagerReleaseTest(unittest.TestCase):
         signed['archive_bytes'] = len(archive.getvalue())
         with self.assertRaises(Refused):
             verify_archive(archive.getvalue(), signed)
+
+    def test_signature_checked_before_payload_download(self):
+        calls = []
+        def downloader(url, limit):
+            calls.append(url)
+            return self.signed() if url == CHANNEL else self.archive
+        with self.assertRaises(Refused):
+            download_release(downloader=downloader)
+        self.assertEqual(calls, [CHANNEL])
+        calls.clear()
+        # Real release timestamps are checked too; this old fixture cannot
+        # be installed by merely supplying a valid signature.
+        self.manifest['issued_at'] = 1_000_000_000
+        self.manifest['expires_at'] = 1_000_000_100
+        with patch('manager_update_release.time.time', return_value=1_000_000_050):
+            raw, archive, files = download_release(
+                downloader=downloader, pinned_key=self.pin)
+        self.assertEqual(calls, [CHANNEL, self.manifest['archive_url']])
+        self.assertEqual(files, {'server.py': self.payload})
 
 
 if __name__ == '__main__':

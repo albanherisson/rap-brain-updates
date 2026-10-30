@@ -9,6 +9,7 @@ import re
 import stat
 import time
 from urllib.parse import urlsplit
+import urllib.request
 import zipfile
 
 from bootstrap_release import PUBLISHER_PIN
@@ -26,6 +27,25 @@ ALLOWED = frozenset(('server.py', 'app/launch_manager.py',
 HEX = re.compile(r'[0-9a-f]{64}\Z')
 MAX_ARCHIVE = 2_000_000
 MAX_MEMBER = 250_000
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        raise Refused('manager_redirect_refused')
+
+
+def fetch(url, limit):
+    if url != CHANNEL:
+        archive_url(url)
+    opener = urllib.request.build_opener(NoRedirect())
+    with opener.open(urllib.request.Request(url, headers={
+            'Accept-Encoding': 'identity'}), timeout=20) as response:
+        if response.status != 200 or response.geturl() != url:
+            raise Refused('manager_unexpected_response')
+        raw = response.read(limit + 1)
+    if not 0 < len(raw) <= limit:
+        raise Refused('manager_download_size')
+    return raw
 
 
 def archive_url(value):
@@ -133,3 +153,13 @@ def verify_archive(raw, manifest):
             SyntaxError) as exc:
         raise Refused('manager_archive_invalid') from exc
     return files
+
+
+def download_release(*, minimum_sequence=0, downloader=fetch,
+                     pinned_key=PUBLISHER_PIN):
+    """Authenticate the manifest before requesting any executable payload."""
+    raw = downloader(CHANNEL, 65536)
+    manifest = verify_manifest(raw, minimum_sequence=minimum_sequence,
+                               pinned_key=pinned_key)
+    archive = downloader(manifest['archive_url'], MAX_ARCHIVE)
+    return raw, archive, verify_archive(archive, manifest)
