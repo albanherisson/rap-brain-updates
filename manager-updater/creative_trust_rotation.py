@@ -9,13 +9,13 @@ import hashlib
 import re
 import time
 
-from bootstrap_release import PUBLISHER_PIN
 from creative_release import CREATIVE_KEY_PIN, Refused, canonical
 from ed25519_runtime import verify_signature
 from strict_json import parse_signed_json
 
 
 BASELINE_SHA256 = 'b50195f6665baefd1838f5aec2e750ed33504804d80c6f09bd493aa20ce779a9'
+PUBLISHER_PIN = '5c7bda9ccdb4ee197ad10f907211f3b33ed74f5986066dd832bb3013df7dba78'
 SHA256 = re.compile(r'[0-9a-f]{64}\Z')
 MARKER = ("CREATIVE_KEY_PIN = '" + CREATIVE_KEY_PIN + "'").encode('ascii')
 

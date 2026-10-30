@@ -18,9 +18,8 @@ import tempfile
 import time
 import zipfile
 
-from bootstrap_release import PUBLISHER_PIN
 from creative_release import verify_archive, verify_manifest
-from creative_trust_rotation import candidate_for_key, verify_rotation
+from creative_trust_rotation import PUBLISHER_PIN, candidate_for_key, verify_rotation
 from mac_publish_creative_p8 import (BASELINE, SERVER, canonical,
     fetch_pinned_gate, one_file_archive, production_payload, sha, sign_with_key)
 
