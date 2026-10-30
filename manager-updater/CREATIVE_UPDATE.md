@@ -2,28 +2,29 @@
 
 ## Current state (30 October 2026)
 
-The owner completed the signed first bootstrap in Finder and then opened the
-existing Rap Brain library and analyses from Beta 14. This is an actual
-installation of the guarded server and one-click Creative updater resources,
-not an installation of the P8 Creative Engine patch. Beta 14's generic update
-tile remains disabled; the Creative-specific signed path is separate.
+The owner validated Beta 14 on the Mac, then installed the signed first
+bootstrap. The guarded server and Creative-specific one-click updater are
+active. The original library and analyses remained visible after that step.
 
-The owner then ran `mac_p9_isolated_gate.py` against the installed server code,
-the authentic signed P8 candidate, a private synthetic SQLite fixture, and the
-real local `qwen3.5:27b` Ollama model. The disposable server produced four bars
-and returned one synthetic RAG source. Its output confirmed that it stopped
-and that no active library, SQLite or Ollama configuration was opened. This
-establishes P9 real Ollama/full-server validation on a copy. It does not assert
-the quality of those four bars or install the patch.
+The owner ran P9 against a disposable server and synthetic SQLite/config with
+the real local Ollama model. It produced four lines and consulted one synthetic
+RAG source. The production P8 release was separately signed with a new
+Creative key, with its Manager-signed trust rotation published on GitHub.
+GitHub Pages was enabled and its build and deployment workflow succeeded on
+commit `5e335f263adfa8a99dd61d253876532a35f7ed20`. The assistant's
+network environment could not independently fetch the Pages URL, but the
+Manager's release verifier accepted and installed the signed P8 publication.
 
-The original Creative private key was not found on the owner's Mac. The P8
-rehearsal envelope explicitly has `production_install_authorized=false` and
-binds the pre-bootstrap server; it was never republished as production. A
-new, distinct Creative key has now signed the production P8 release. Its
-acceptance by the installed Manager requires the separately Manager-signed
-trust rotation and guarded Finder installation described below. The public
-release files are in GitHub, but Pages activation and live installation are
-still pending. No live Creative Engine update or production rollback occurred.
+The one-time Finder trust installer reported “Clé Creative mise à jour”. The
+Manager then returned `state=finished`, `installation_performed=true`,
+`outcome=committed`, `database_replaced=false`, and backup ID
+`9319947ecf694990831917cc66879eb1`. The owner reopened Rap Brain and
+confirmed that the existing library and analyses were present. This is an
+actual production installation of the Creative Engine P8 patch, following
+copy rehearsal, fresh backup, signature verification and health checks. A
+production rollback was not triggered or demonstrated by this successful run.
+The generic “Installer / Mettre à jour” tile remains disabled and is the next
+Manager task; the Creative-specific signed path is separate.
 
 ### Publisher key recovery finding (30 October)
 
@@ -56,9 +57,7 @@ The Manager-signed trust manifest was published on `main` at commit
 Creative manifest and archive are on `gh-pages` at
 `5e335f263adfa8a99dd61d253876532a35f7ed20`. At publication time, the
 GitHub Pages URL still returned HTTP 404 because Pages was not configured.
-No production rotation or P8 code has been installed. The remaining gates are
-Pages activation, public fetch verification, owner-side validation of the
-Finder installation, and P8 installation. The Finder installer now invokes
+The rotation and P8 installation subsequently succeeded on the owner's Mac as recorded in the current-state section. The direct public Pages fetch was not independently observable from the assistant environment. The Finder installer now invokes
 `trust_rotation_rehearsal.py` first: it copies the owner's app and two code
 files, generates only synthetic SQLite/configuration, executes the signed
 rotation against that copy, and proves exact restoration before any real
