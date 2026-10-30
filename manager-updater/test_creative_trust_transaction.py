@@ -37,6 +37,11 @@ class RotationTransactionTests(unittest.TestCase):
         self.app = self.root / 'Rap Brain Manager Beta 14.app'
         resources = self.app / 'Contents' / 'Resources'
         resources.mkdir(parents=True)
+        (self.app / 'Contents' / 'Info.plist').write_bytes(plistlib.dumps({
+            'CFBundleExecutable': 'DisposableRapBrain'}))
+        executable = self.app / 'Contents' / 'MacOS' / 'DisposableRapBrain'
+        executable.parent.mkdir()
+        executable.write_bytes(b'fixture executable')
         self.launcher = resources / 'launch_manager.py'
         self.launcher.write_bytes(b'# fixture\n')
         self.target = resources / 'creative_release.py'
@@ -149,7 +154,6 @@ class RotationTransactionTests(unittest.TestCase):
             'CFBundleName': 'Disposable Rap Brain',
             'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1'}))
         native = self.app / 'Contents' / 'MacOS' / 'DisposableRapBrain'
-        native.parent.mkdir()
         native.write_bytes(Path('/bin/echo').read_bytes())
         native.chmod(0o755)
         subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',

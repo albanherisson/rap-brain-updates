@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import secrets
 import stat
 import uuid
@@ -130,8 +131,22 @@ class OfflineTrustRotation:
     def _verify_candidate_app(self, folder, candidate_hash):
         original = read_app_backup(folder)
         current = inventory(self.app)
+        try:
+            info = plistlib.loads(safe_path(self.app / 'Contents' / 'Info.plist').read_bytes())
+            executable = info['CFBundleExecutable']
+        except (ValueError, KeyError, TypeError) as exc:
+            raise Refused('trust_rotation_app_executable_unknown') from exc
+        if (type(executable) is not str or not 1 <= len(executable) <= 100 or
+                any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-'
+                    for c in executable)):
+            raise Refused('trust_rotation_app_executable_unknown')
+        signed_executable = 'Contents/MacOS/' + executable
+        if (signed_executable not in original or
+                current.get('Contents/Info.plist', {}).get('sha256') !=
+                    original.get('Contents/Info.plist', {}).get('sha256')):
+            raise Refused('trust_rotation_app_executable_changed')
         allowed = {'Contents/Resources/creative_release.py',
-                   'Contents/_CodeSignature/CodeResources'}
+                   'Contents/_CodeSignature/CodeResources', signed_executable}
         changed = sorted(name for name, entry in original.items()
                          if name in current and name not in allowed and
                          current[name]['sha256'] != entry['sha256'])
