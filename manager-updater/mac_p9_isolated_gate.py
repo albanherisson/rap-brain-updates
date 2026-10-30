@@ -211,12 +211,18 @@ def run_isolated(source, home, *, ollama_url='http://127.0.0.1:11434',
            'PYTHONDONTWRITEBYTECODE': '1', 'OLLAMA_URL': ollama_url}
     child = subprocess.Popen([server_python(), '-B', '-u', str(source / 'server.py')],
         cwd=source, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL, start_new_session=True)
+        stderr=subprocess.PIPE, start_new_session=True)
     try:
         deadline = time.monotonic() + 30
         while time.monotonic() < deadline:
             if child.poll() is not None:
-                raise ValueError('isolated_server_exited')
+                error = child.stderr.read(16_384).decode('utf-8', 'replace')
+                known = re.search(r'(update_guard_unsafe_directory|'
+                    r'update_guard_private_directory_required|update_in_progress|'
+                    r'bootstrap_recovery_required|update_recovery_required|'
+                    r'ModuleNotFoundError|SyntaxError)', error)
+                raise ValueError('isolated_server_exited' +
+                                 ('_' + known.group(1) if known else ''))
             try:
                 listener_check(port, child.pid)
                 status = request(port, 'GET', '/api/status')
@@ -248,6 +254,7 @@ def run_isolated(source, home, *, ollama_url='http://127.0.0.1:11434',
             if child.poll() is None and os.getpgid(child.pid) == child.pid:
                 os.killpg(child.pid, signal.SIGKILL)
             child.wait(timeout=5)
+        child.stderr.close()
 
 
 def main():
@@ -258,7 +265,9 @@ def main():
     original = {name: pinned_file(SOURCE / name, expected)
                 for name, expected in EXPECTED.items()}
     with tempfile.TemporaryDirectory(prefix='rapbrain-p9-isolated-') as tmp:
-        root = Path(tmp)
+        # macOS exposes its temporary directory through /var -> /private/var.
+        # The installed server's symlink guard requires the canonical path.
+        root = Path(tmp).resolve(strict=True)
         candidate = signed_candidate(root)
         home = root / 'home'
         stage = home / 'Downloads' / 'rap-brain'

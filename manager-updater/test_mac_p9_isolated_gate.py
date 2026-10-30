@@ -21,6 +21,11 @@ REVIEW = ROOT.parent / 'library-downloads' / 'RapBrain_CreativeEngine_SourceRevi
 
 
 class P9GateTests(unittest.TestCase):
+    def test_private_temp_path_has_no_symlink_ancestors(self):
+        with tempfile.TemporaryDirectory(prefix='rapbrain-p9-isolated-') as tmp:
+            root = Path(tmp).resolve(strict=True)
+            self.assertFalse(any(path.is_symlink() for path in (root, *root.parents)))
+
     @unittest.skipUnless(sys.platform == 'darwin', 'requires macOS CryptoKit')
     def test_swift_fallback_verifies_without_python_crypto(self):
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
