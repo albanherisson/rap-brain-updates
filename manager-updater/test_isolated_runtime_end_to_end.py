@@ -9,6 +9,7 @@ import unittest
 
 from creative_release import digest
 from isolated_runtime_lab import rehearse
+from isolated_runtime_runner import run_disposable
 
 ORIGINAL = b"PORT = 8765\n"
 CANDIDATE = b"""import os
@@ -40,8 +41,12 @@ class EndToEndTests(unittest.TestCase):
             source.mkdir()
             workspace.mkdir()
             (source / "server.py").write_bytes(ORIGINAL)
+            def owned_runner(staged, home, expected):
+                kwargs = {} if sys.platform == 'darwin' else {
+                    'listener_check': lambda port, pid: True}
+                return run_disposable(staged, home, expected, **kwargs)
             report = rehearse(source, CANDIDATE, digest(ORIGINAL), digest(CANDIDATE),
-                              workspace=workspace)
+                              workspace=workspace, runner=owned_runner)
             self.assertTrue(report['isolated_health'])
             self.assertTrue(report['original_server_unchanged'])
             self.assertEqual(report['modules_staged'], 1)
