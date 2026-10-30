@@ -24,7 +24,11 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     from pathlib import Path
     Path(os.environ['HOME'], 'fixture-started').write_text(str(PORT))
-    server = HTTPServer(('127.0.0.1', PORT), Handler)
+    try:
+        server = HTTPServer(('127.0.0.1', PORT), Handler)
+    except OSError as exc:
+        Path(os.environ['HOME'], 'fixture-bind-error').write_text(repr(exc))
+        raise
     Path(os.environ['HOME'], 'fixture-bound').write_text(str(server.server_address))
     server.serve_forever()
 '''
@@ -47,7 +51,8 @@ class RunnerTests(unittest.TestCase):
                 marker = home / 'fixture-started'
                 requested = home / 'fixture-request'
                 bound = home / 'fixture-bound'
-                self.fail(f'{exc}; child_started={marker.exists()}; '
+                bind_error = home / 'fixture-bind-error'
+                self.fail(f'{exc}; bind_error={bind_error.read_text() if bind_error.exists() else "missing"}; child_started={marker.exists()}; '
                           f'port={marker.read_text() if marker.exists() else "missing"}; '
                           f'bound={bound.read_text() if bound.exists() else "missing"}; '
                           f'request={requested.read_text() if requested.exists() else "missing"}')
