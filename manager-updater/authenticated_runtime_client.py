@@ -53,8 +53,10 @@ def assert_owned_listener(port, expected_parent_pid):
     lines = result.stdout.splitlines()
     pids = [int(line[1:]) for line in lines
             if re.fullmatch(r'p[0-9]+', line)]
+    # macOS lsof -Fp emits a process record followed by one or more
+    # descriptor records (e.g. p3824, f3). Never accept another PID.
     if (result.stderr or len(result.stdout) > 4096 or not lines or
-            any(not re.fullmatch(r'p[0-9]+', line) for line in lines) or
+            any(not re.fullmatch(r'(?:p[0-9]+|f[0-9]+[a-zA-Z]?)', line) for line in lines) or
             len(pids) != 1 or pids[0] != expected_parent_pid):
         raise Refused('listener_not_owned')
     return True
