@@ -16,8 +16,9 @@ and that no active library, SQLite or Ollama configuration was opened. This
 establishes P9 real Ollama/full-server validation on a copy. It does not assert
 the quality of those four bars or install the patch.
 
-The production P8 release still needs a fresh Ed25519 signature with the
-existing Creative publisher identity. The P8 rehearsal envelope explicitly
+The production P8 release still needs a fresh Ed25519 signature after a
+verified publisher key rotation, because the original Creative private key
+was not found on the owner's Mac. The P8 rehearsal envelope explicitly
 has `production_install_authorized=false` and binds the pre-bootstrap server;
 it cannot be republished as the production release. `mac_publish_creative_p8.py`
 prepares only a public manifest on the publisher Mac after checking the pinned
@@ -25,6 +26,25 @@ P8 code and current server baseline. An empty `gh-pages` branch exists for the
 future signed channel, but Pages is not yet confirmed enabled, and no production
 manifest or ZIP is published. No live Creative Engine update or production
 rollback has occurred.
+
+### Publisher key recovery finding (30 October)
+
+The owner searched the relevant Mac directories without printing private key
+contents. The only private file found is the 32-byte legacy Manager key at
+`~/Library/Application Support/RapBrainManager/publisher_ed25519.key`. This is
+the different `5c7b…` Manager identity, not the `ae326…` Creative identity.
+The P8 rehearsal signature cannot be converted into a production signature.
+Do not publish a manifest signed with the Manager key under the old Creative
+pin or copy a replacement file directly into the installed app.
+
+`creative_trust_rotation.py` is now a pure verifier for a **future** Manager
+signed authorization of a newly generated, distinct Creative public key. It
+checks the already installed first-bootstrap `creative_release.py` hash and
+constructs exactly the one-line fingerprint replacement. It rejects an
+expanded scope, expired authorization and a forged payload. This verifier is
+tested on local copies, but no production rotation has been signed, packaged,
+published or installed. The next work is the guarded Mac transaction and
+separate rollback rehearsal, then a signed release from the new Creative key.
 
 The sections below record the earlier implementation stages and their status
 at the time; statements such as “no first bootstrap installed” there are
