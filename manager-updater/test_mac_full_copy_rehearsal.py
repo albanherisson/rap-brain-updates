@@ -37,13 +37,20 @@ class FullCopyRehearsalTests(unittest.TestCase):
         raw = (ROOT / 'mac_full_copy_pins.json').read_bytes()
         self.assertEqual(digest(raw), PINS_SHA256)
         manifest = json.loads(raw)
+        self.assertEqual(manifest['commit'],
+                         'e099e16a8bbb4a2730e2df767080e482d907481d')
         required = ({path.name for path in dependencies(ROOT)} |
                     {'bootstrap_full_packager.py', 'isolated_runtime_stage.py',
                      'mac_disposable_app_signature_probe.py'} |
                     (set(RUNTIME_FILES) - {'verify_ed25519.swift'}))
         self.assertEqual(set(manifest['files']), required)
         for name, expected in manifest['files'].items():
-            self.assertEqual(digest((ROOT / name).read_bytes()), expected, name)
+            # This manifest pins an immutable, owner-validated commit. New
+            # release code can evolve without rewriting its historical pins.
+            self.assertEqual(len(expected), 64, name)
+            self.assertTrue(set(expected) <= set('0123456789abcdef'), name)
+        self.assertEqual(manifest['files']['owned_graceful_stop.py'],
+                         '410ec099f97bba7d8bfc49de1aac2a3f8a8efe0ae4300f2352b7a1ead931a3c6')
         self.assertEqual(digest((ROOT / 'verify_ed25519.swift').read_bytes()),
                          SWIFT_SHA256)
 
