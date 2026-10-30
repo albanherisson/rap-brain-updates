@@ -224,9 +224,11 @@ class OfflineTrustRotation:
                 if digest(safe_path(self.target).read_bytes()) != signed['candidate_sha256']:
                     raise Refused('trust_rotation_candidate_changed')
                 self._verify_candidate_app(folder, signed['candidate_sha256'])
-            except Exception:
+            except Exception as exc:
                 if (folder / 'app-backup.json').is_file():
-                    return self._restore(record, folder, ticket)
+                    result = self._restore(record, folder, ticket)
+                    result['reason'] = str(exc) if isinstance(exc, Refused) else type(exc).__name__
+                    return result
                 # No app bytes were replaced before the backup completed.
                 if safe_path(self.target).read_bytes() != original:
                     raise Refused('trust_rotation_unbacked_change')

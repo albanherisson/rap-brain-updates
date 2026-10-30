@@ -89,7 +89,7 @@ class RotationTransactionTests(unittest.TestCase):
 
     def test_commit_only_rotates_one_app_file_and_backs_up_data(self):
         result = self.run_with_fixtures(self.transaction())
-        self.assertEqual(result['state'], 'committed')
+        self.assertEqual(result['state'], 'committed', result)
         self.assertEqual(self.target.read_bytes(), self.candidate)
         self.assertEqual(self.launcher.read_bytes(), b'# fixture\n')
         self.assertFalse((self.state / 'maintenance.ticket').exists())
@@ -126,7 +126,7 @@ class RotationTransactionTests(unittest.TestCase):
         self.assertEqual(self.target.read_bytes(), self.candidate)
         self.assertTrue((self.state / 'maintenance.ticket').exists())
         result = self.run_with_fixtures(self.transaction())
-        self.assertEqual(result['state'], 'committed')
+        self.assertEqual(result['state'], 'committed', result)
         self.assertTrue(result['recovered'])
         self.assertFalse((self.state / 'maintenance.ticket').exists())
         self.unchanged_data()
@@ -159,7 +159,7 @@ class RotationTransactionTests(unittest.TestCase):
         tx = OfflineTrustRotation(self.source, self.launcher, self.state,
                                   inspector=self.idle)
         result = self.run_with_fixtures(tx)
-        self.assertEqual(result['state'], 'committed')
+        self.assertEqual(result['state'], 'committed', result)
         subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
                         str(self.app)], check=True, capture_output=True)
         folder = self.state / result['backup_id']
