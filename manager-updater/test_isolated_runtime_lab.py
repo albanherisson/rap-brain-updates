@@ -32,6 +32,30 @@ class LabTests(unittest.TestCase):
             self.assertEqual(list(workspace.iterdir()), [])
             self.assertEqual((source / 'server.py').read_bytes(), original)
 
+    def test_failed_real_runner_preserves_live_source_and_cleans_lab(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder:
+            root = Path(folder)
+            source = root / 'active-source'
+            source.mkdir()
+            original = b'import helper\nPORT = 8765\n'
+            candidate = b'import helper\nPORT = int(__import__("os").getenv("RAP_BRAIN_PORT", "8765"))\n'
+            (source / 'server.py').write_bytes(original)
+            (source / 'helper.py').write_bytes(b'VALUE = 1\n')
+            workspace = root / 'workspace'
+            workspace.mkdir()
+
+            def failing_runner(staged, home, expected):
+                self.assertFalse((staged / 'data').exists())
+                self.assertEqual(digest((staged / 'server.py').read_bytes()), expected)
+                raise Refused('isolated_status_unavailable')
+
+            with self.assertRaisesRegex(Refused, 'isolated_status_unavailable'):
+                rehearse(source, candidate, digest(original), digest(candidate),
+                         workspace=workspace, runner=failing_runner)
+            self.assertEqual((source / 'server.py').read_bytes(), original)
+            self.assertEqual((source / 'helper.py').read_bytes(), b'VALUE = 1\n')
+            self.assertEqual(list(workspace.iterdir()), [])
+
     def test_refuses_inaccurate_candidate_before_staging(self):
         with tempfile.TemporaryDirectory(dir=Path.cwd()) as folder:
             root = Path(folder)
