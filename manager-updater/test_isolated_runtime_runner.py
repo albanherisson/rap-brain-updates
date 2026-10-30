@@ -24,6 +24,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     from pathlib import Path
     Path(os.environ['HOME'], 'fixture-started').write_text(str(PORT))
+    Path(os.environ['HOME'], 'fixture-prebind').write_text('ready')
     try:
         server = HTTPServer(('127.0.0.1', PORT), Handler)
     except OSError as exc:
@@ -52,7 +53,8 @@ class RunnerTests(unittest.TestCase):
                 requested = home / 'fixture-request'
                 bound = home / 'fixture-bound'
                 bind_error = home / 'fixture-bind-error'
-                self.fail(f'{exc}; bind_error={bind_error.read_text() if bind_error.exists() else "missing"}; child_started={marker.exists()}; '
+                prebind = home / 'fixture-prebind'
+                self.fail(f'{exc}; prebind={prebind.exists()}; bind_error={bind_error.read_text() if bind_error.exists() else "missing"}; child_started={marker.exists()}; '
                           f'port={marker.read_text() if marker.exists() else "missing"}; '
                           f'bound={bound.read_text() if bound.exists() else "missing"}; '
                           f'request={requested.read_text() if requested.exists() else "missing"}')
