@@ -8,6 +8,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from bootstrap_runtime_resources import RUNTIME_FILES
+from build_first_bootstrap_app import dependencies
 from mac_full_copy_rehearsal import (
     PINS_SHA256, SWIFT_SHA256, digest, ephemeral_envelope, scoped_inspector)
 
@@ -35,7 +37,11 @@ class FullCopyRehearsalTests(unittest.TestCase):
         raw = (ROOT / 'mac_full_copy_pins.json').read_bytes()
         self.assertEqual(digest(raw), PINS_SHA256)
         manifest = json.loads(raw)
-        self.assertEqual(len(manifest['files']), 39)
+        required = ({path.name for path in dependencies(ROOT)} |
+                    {'bootstrap_full_packager.py', 'isolated_runtime_stage.py',
+                     'mac_disposable_app_signature_probe.py'} |
+                    (set(RUNTIME_FILES) - {'verify_ed25519.swift'}))
+        self.assertEqual(set(manifest['files']), required)
         for name, expected in manifest['files'].items():
             self.assertEqual(digest((ROOT / name).read_bytes()), expected, name)
         self.assertEqual(digest((ROOT / 'verify_ed25519.swift').read_bytes()),
