@@ -16,16 +16,14 @@ and that no active library, SQLite or Ollama configuration was opened. This
 establishes P9 real Ollama/full-server validation on a copy. It does not assert
 the quality of those four bars or install the patch.
 
-The production P8 release still needs a fresh Ed25519 signature after a
-verified publisher key rotation, because the original Creative private key
-was not found on the owner's Mac. The P8 rehearsal envelope explicitly
-has `production_install_authorized=false` and binds the pre-bootstrap server;
-it cannot be republished as the production release. `mac_publish_creative_p8.py`
-prepares only a public manifest on the publisher Mac after checking the pinned
-P8 code and current server baseline. An empty `gh-pages` branch exists for the
-future signed channel, but Pages is not yet confirmed enabled, and no production
-manifest or ZIP is published. No live Creative Engine update or production
-rollback has occurred.
+The original Creative private key was not found on the owner's Mac. The P8
+rehearsal envelope explicitly has `production_install_authorized=false` and
+binds the pre-bootstrap server; it was never republished as production. A
+new, distinct Creative key has now signed the production P8 release. Its
+acceptance by the installed Manager requires the separately Manager-signed
+trust rotation and guarded Finder installation described below. The public
+release files are in GitHub, but Pages activation and live installation are
+still pending. No live Creative Engine update or production rollback occurred.
 
 ### Publisher key recovery finding (30 October)
 
@@ -37,23 +35,30 @@ The P8 rehearsal signature cannot be converted into a production signature.
 Do not publish a manifest signed with the Manager key under the old Creative
 pin or copy a replacement file directly into the installed app.
 
-`creative_trust_rotation.py` verifies a **future** Manager-signed authorization
+`creative_trust_rotation.py` verifies the Manager-signed authorization
 of a newly generated, distinct Creative public key. It checks the already
 installed first-bootstrap `creative_release.py` hash and constructs exactly
 the one-line fingerprint replacement. `creative_trust_transaction.py` now
 uses the existing guarded lifetime lock, maintenance marker, full app backup,
 SQLite/config backup and restore drill, app signing, exact rollback, and
-pending-attempt recovery. Disposable success/failure/crash tests pass locally;
-the actual macOS signing/rollback fixture is pending CI. A separate Finder
-installer builder and offline entrypoint are staged for those CI checks.
-The macOS CI fixture passed real app signing and exact restore on a copy.
+pending-attempt recovery. Disposable success/failure/crash tests and the
+macOS real signing/rollback fixture passed on copies. A separate Finder
+installer builder and offline entrypoint were also built in macOS CI.
 `mac_prepare_creative_publication.py` prepares one public ZIP containing the
 Manager-signed rotation, a separately signed Creative production manifest,
 and the one-file P8 engine archive. It creates two private, owner-only copies
 of the new Creative seed on the Mac and verifies both signatures locally.
-It has not run on the owner's Mac. No production rotation has been signed,
-published or installed. The next gates are Mac publisher execution, public
-release upload, isolated installation rehearsal and owner validation.
+The owner ran that publisher on the Mac on 30 October and supplied the
+6,844-byte public ZIP (SHA-256 `9916bda4b18912a42c601f22f7bd27c85057b9e97d2876ce15fe2972acadb043`).
+Both Ed25519 signatures and the exact one-file P8 archive verify independently.
+The Manager-signed trust manifest was published on `main` at commit
+`008220a6ccb638287a9d37414829e0b7f1cc70c3`; the separately signed
+Creative manifest and archive are on `gh-pages` at
+`5e335f263adfa8a99dd61d253876532a35f7ed20`. At publication time, the
+GitHub Pages URL still returned HTTP 404 because Pages was not configured.
+No production rotation or P8 code has been installed. The remaining gates are
+Pages activation, public fetch verification, owner-side copy rehearsal and
+then owner validation of the real Finder installation.
 
 The sections below record the earlier implementation stages and their status
 at the time; statements such as “no first bootstrap installed” there are
