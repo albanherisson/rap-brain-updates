@@ -184,6 +184,23 @@ def port_available():
     return port
 
 
+def server_python():
+    if (3, 10) <= sys.version_info[:2] < (4, 0):
+        return sys.executable
+    for candidate in ('/opt/homebrew/bin/python3', '/usr/local/bin/python3',
+                      '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
+                      '/usr/bin/python3'):
+        if not Path(candidate).is_file():
+            continue
+        result = subprocess.run([candidate, '-c',
+            'import sys; raise SystemExit(not ((3, 10) <= sys.version_info[:2] < (4, 0)))'],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, timeout=5)
+        if result.returncode == 0:
+            return candidate
+    raise ValueError('python_3_10_required')
+
+
 def run_isolated(source, home, *, ollama_url='http://127.0.0.1:11434',
                  listener_check=own_listener):
     if not re.fullmatch(r'http://127\.0\.0\.1:[0-9]{1,5}', ollama_url):
@@ -192,7 +209,7 @@ def run_isolated(source, home, *, ollama_url='http://127.0.0.1:11434',
     env = {'PATH': '/usr/bin:/bin:/usr/sbin:/sbin', 'LANG': 'C',
            'HOME': str(home), 'RAP_BRAIN_PORT': str(port),
            'PYTHONDONTWRITEBYTECODE': '1', 'OLLAMA_URL': ollama_url}
-    child = subprocess.Popen([sys.executable, '-B', '-u', str(source / 'server.py')],
+    child = subprocess.Popen([server_python(), '-B', '-u', str(source / 'server.py')],
         cwd=source, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL, start_new_session=True)
     try:
