@@ -33,12 +33,12 @@ end run
 '''
 
 
-def dependencies(root=ROOT):
+def dependencies(root=ROOT, entry=ENTRY):
     """Use only local static imports; fail if the source tree is incomplete."""
     modules = {path.stem: path for path in root.glob('*.py')
                if not path.name.startswith('test_')}
     discovered = set()
-    pending = [ENTRY]
+    pending = [entry]
     while pending:
         name = pending.pop()
         if name in discovered:

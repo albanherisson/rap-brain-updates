@@ -53,6 +53,12 @@ jobs:
           mkdir "$RUNNER_TEMP/installer-verify"
           /usr/bin/ditto -x -k "$RUNNER_TEMP/Installer_Rap_Brain.zip" "$RUNNER_TEMP/installer-verify"
           /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/installer-verify/Installer Rap Brain.app"
+      - name: Build and verify disposable Creative trust installer
+        run: |
+          python -B manager-updater/build_creative_trust_app.py "$RUNNER_TEMP/Installer Creative Rap Brain.app"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/Installer Creative Rap Brain.app"
+          test -f "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/creative_trust_transaction.py"
+          /bin/sh "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" "$RUNNER_TEMP/Installer Creative Rap Brain.app/Contents/Resources/updater/creative_trust_installer.py" --help >/dev/null
       - uses: actions/upload-artifact@v4
         with:
           name: rapbrain-finder-installer-macos

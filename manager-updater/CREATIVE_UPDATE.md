@@ -37,14 +37,18 @@ The P8 rehearsal signature cannot be converted into a production signature.
 Do not publish a manifest signed with the Manager key under the old Creative
 pin or copy a replacement file directly into the installed app.
 
-`creative_trust_rotation.py` is now a pure verifier for a **future** Manager
-signed authorization of a newly generated, distinct Creative public key. It
-checks the already installed first-bootstrap `creative_release.py` hash and
-constructs exactly the one-line fingerprint replacement. It rejects an
-expanded scope, expired authorization and a forged payload. This verifier is
-tested on local copies, but no production rotation has been signed, packaged,
-published or installed. The next work is the guarded Mac transaction and
-separate rollback rehearsal, then a signed release from the new Creative key.
+`creative_trust_rotation.py` verifies a **future** Manager-signed authorization
+of a newly generated, distinct Creative public key. It checks the already
+installed first-bootstrap `creative_release.py` hash and constructs exactly
+the one-line fingerprint replacement. `creative_trust_transaction.py` now
+uses the existing guarded lifetime lock, maintenance marker, full app backup,
+SQLite/config backup and restore drill, app signing, exact rollback, and
+pending-attempt recovery. Disposable success/failure/crash tests pass locally;
+the actual macOS signing/rollback fixture is pending CI. A separate Finder
+installer builder and offline entrypoint are staged for those CI checks.
+No production rotation has been signed, published or installed. The next work
+is Mac copy validation, publisher key creation and a signed release from that
+new Creative key.
 
 The sections below record the earlier implementation stages and their status
 at the time; statements such as “no first bootstrap installed” there are
