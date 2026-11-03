@@ -43,6 +43,12 @@ disposable unit tests only. A refused stop leaves its maintenance marker for
 authenticated recovery, so this prototype must not be enabled as a button.
 The helper and its dependencies also require a reviewed, signed deployment
 outside the replaceable app bundle. The installed Beta 14 has none of this.
+The pinned `manager_update_ui_candidate.py` now prepares a disposable copy of
+the previously installed bootstrap launcher/dashboard. Its authenticated HTTP
+request is handed to the parent that retains the owned server handle; the
+parent exits after releasing the helper pipe. The copy smoke rejects a POST
+without a token and leaves a synthetic server unchanged. This candidate is
+not a production release and the helper bundle/recovery packaging is missing.
 
 ## Remaining implementation gates
 

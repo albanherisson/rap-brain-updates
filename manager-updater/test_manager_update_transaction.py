@@ -170,6 +170,38 @@ class ManagerTransactionTests(unittest.TestCase):
                                                IDENTIFIER)
         self.assert_code(self.before)
 
+    def test_handoff_never_recovers_another_pending_attempt(self):
+        transaction = self.tx([True])
+        record = {'id': '4' * 32, 'source': str(self.source),
+            'launcher': str(self.launcher), 'schema': self.manifest['schema'],
+            'sequence': 1, 'server_mode': 0o644,
+            'server_baseline': digest(self.before['server.py']),
+            'baselines': {entry['path']: entry['baseline_sha256']
+                          for entry in self.manifest['files']}}
+        (self.state / record['id']).mkdir(mode=0o700)
+        transaction.record(record, 'preparing')
+        with self.assertRaisesRegex(Refused, 'manager_other_attempt_pending'):
+            transaction.install_handed_off(self.signed, self.archive, IDENTIFIER)
+        self.assert_code(self.before)
+        self.assert_data()
+
+    def test_handoff_preserves_pending_attempt_if_saved_release_changed(self):
+        transaction = self.tx([True])
+        record = {'id': IDENTIFIER, 'source': str(self.source),
+            'launcher': str(self.launcher), 'schema': self.manifest['schema'],
+            'sequence': 1, 'server_mode': 0o644,
+            'server_baseline': digest(self.before['server.py']),
+            'baselines': {entry['path']: entry['baseline_sha256']
+                          for entry in self.manifest['files']}}
+        folder = self.state / IDENTIFIER
+        folder.mkdir(mode=0o700)
+        (folder / 'manager-release.json').write_bytes(b'different')
+        transaction.record(record, 'preparing')
+        with self.assertRaisesRegex(Refused, 'manager_original_release_changed'):
+            transaction.install_handed_off(self.signed, self.archive, IDENTIFIER)
+        self.assert_code(self.before)
+        self.assert_data()
+
     def test_handoff_abort_restarts_unchanged_original(self):
         transaction = self.tx([True])
         with transaction.lifecycle.maintenance(self.source, self.launcher):

@@ -267,6 +267,12 @@ class ManagerUpdateTransaction(BootstrapTransaction):
             if os.path.lexists(self.journal):
                 previous = self._journal_record()
                 if previous['phase'] not in TERMINAL:
+                    if previous['id'] != identifier:
+                        raise Refused('manager_other_attempt_pending')
+                    folder = safe_path(self.state / identifier, directory=True)
+                    saved = folder / 'manager-release.json'
+                    if os.path.lexists(saved) and safe_path(saved).read_bytes() != signed_manifest:
+                        raise Refused('manager_original_release_changed')
                     return self.recover_locked()
             if not (os.path.lexists(self.state / 'bootstrap-intent.json') and
                     os.path.lexists(self.state / 'maintenance.ticket')):
