@@ -29,6 +29,9 @@ and exact restored-app signature verification to a general signed release.
 Disposable tests cover terminal ticket cleanup for both commit and failed
 health rollback. This adapter has not yet passed macOS code-signing or real
 process tests and is not connected to the installed Manager.
+The macOS CI suite now includes a disposable, genuinely code-signed app test
+that forces failed health and checks exact signature-preserving restoration;
+its macOS job must pass before the capability can advance.
 
 ## Remaining implementation gates
 

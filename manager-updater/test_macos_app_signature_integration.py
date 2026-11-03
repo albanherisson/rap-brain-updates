@@ -12,11 +12,70 @@ from mac_disposable_app_signature_probe import (
     copy_file_without_system_flags, inventory as probe_inventory)
 from mac_offline_bootstrap_gate import resign_verified_app, verify_restored_app
 from offline_bootstrap_lifecycle import MacOfflineBootstrapLifecycle
+from bootstrap_runtime_resources import RUNTIME_FILES
+from manager_offline_lifecycle import MacOfflineManagerLifecycle
+from manager_update_transaction import ManagerUpdateTransaction
 import test_bootstrap_full_transaction as full_fixture
+import test_manager_update_transaction as manager_fixture
 
 
 @unittest.skipUnless(sys.platform == 'darwin', 'requires macOS codesign')
 class MacAppSignatureIntegrationTests(unittest.TestCase):
+    def test_general_manager_failed_health_restores_signed_bundle(self):
+        fixture = manager_fixture.ManagerTransactionTests(
+            'test_failed_health_restores_exact_code')
+        fixture.setUp()
+        try:
+            (fixture.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
+            for name in RUNTIME_FILES:
+                (fixture.resources / name).write_bytes(b'original signed resource')
+            app = fixture.resources.parents[1]
+            (app / 'Contents' / 'Info.plist').write_bytes(plistlib.dumps({
+                'CFBundleIdentifier': 'org.rapbrain.disposable-manager-update',
+                'CFBundleExecutable': 'RapBrainManagerLegacy',
+                'CFBundleName': 'Disposable Rap Brain',
+                'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1',
+            }))
+            native = app / 'Contents' / 'MacOS' / 'RapBrainManagerLegacy'
+            native.parent.mkdir()
+            native.write_bytes(Path('/bin/echo').read_bytes())
+            native.chmod(0o755)
+            subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
+                            str(app)], check=True, capture_output=True)
+            original = inventory(app)
+
+            class FailedCandidate:
+                def __init__(self, _source, _state, _supervisor, expected_server_sha256,
+                             *, port):
+                    self.expected_server_sha256 = expected_server_sha256
+                    self.lock = None
+                    self.current = None
+
+                def start_and_check(self):
+                    self.lock.release_to_ticketed_candidate()
+                    self.current = type('Exited', (), {'poll': lambda self: 1})()
+                    return False
+
+            offline = lambda *_: {'server_process_seen': False,
+                                  'manager_process_seen': False,
+                                  'port_8765_listening': False}
+            lifecycle = MacOfflineManagerLifecycle(
+                fixture.source, fixture.launcher, fixture.state,
+                fixture.signed, pinned_key=fixture.pin,
+                inspector=offline, candidate_factory=FailedCandidate)
+            result = ManagerUpdateTransaction(
+                fixture.source, fixture.launcher, fixture.state,
+                lifecycle, pinned_key=fixture.pin).install(fixture.signed, fixture.archive)
+            self.assertEqual(result['state'], 'restored_stopped')
+            self.assertEqual(inventory(app), original)
+            subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                            str(app)], check=True, capture_output=True)
+            fixture.assert_code(fixture.before)
+            fixture.assert_data()
+            self.assertFalse((fixture.state / 'maintenance.ticket').exists())
+        finally:
+            fixture.doCleanups()
+
     def test_full_failed_health_restores_signed_bundle_and_disposable_data(self):
         fixture = full_fixture.FullTransactionTests('test_failed_health_restores_originals_and_removes_runtime')
         fixture.setUp()
