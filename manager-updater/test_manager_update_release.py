@@ -96,6 +96,17 @@ class ManagerReleaseTest(unittest.TestCase):
         with self.assertRaises(Refused):
             verify_archive(archive.getvalue(), signed)
 
+    def test_swift_verifier_requires_reviewed_cryptokit_checks(self):
+        code = b'import Foundation\n'
+        archive = self.zip_for('app/verify_ed25519.swift', code)
+        self.manifest['files'] = [{'path': 'app/verify_ed25519.swift',
+                                   'baseline_sha256': digest(b'old'),
+                                   'payload_sha256': digest(code)}]
+        self.manifest['archive_sha256'] = digest(archive)
+        self.manifest['archive_bytes'] = len(archive)
+        with self.assertRaises(Refused):
+            verify_archive(archive, self.verify())
+
     def test_signature_checked_before_payload_download(self):
         calls = []
         def downloader(url, limit):

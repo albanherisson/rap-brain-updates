@@ -148,7 +148,11 @@ def verify_archive(raw, manifest):
                 if member.filename.endswith('.py'):
                     compile(code, member.filename, 'exec')
                 else:
-                    code.decode('utf-8')
+                    decoded = code.decode('utf-8')
+                    if member.filename == 'app/verify_ed25519.swift' and (
+                            'import CryptoKit' not in decoded or
+                            'isValidSignature(signature, for: message)' not in decoded):
+                        raise Refused('manager_swift_verifier_changed')
                 files[member.filename] = code
     except (zipfile.BadZipFile, EOFError, RuntimeError, UnicodeError,
             SyntaxError) as exc:
