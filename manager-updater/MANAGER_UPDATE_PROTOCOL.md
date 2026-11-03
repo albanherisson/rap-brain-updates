@@ -53,6 +53,12 @@ The helper now records a small private terminal result after the HTTP parent
 exits; a pending maintenance ticket is displayed as requiring a check instead
 of reporting a false success. A crash before the report still needs a
 dedicated recovery entrypoint and macOS process tests.
+`manager_update_recovery.py` is a separate offline entrypoint for an existing
+nonterminal attempt. It reads the original private intent and signed stage,
+checks the attempt identity and any saved release, and either aborts unchanged
+pre-journal code or resumes the original journal. Its tests use synthetic
+SQLite/configuration. Terminal-journal cleanup, capability packaging and
+macOS process validation are still missing; it is not installed.
 
 ## Remaining implementation gates
 
