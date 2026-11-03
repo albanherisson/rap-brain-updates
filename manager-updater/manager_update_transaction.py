@@ -43,6 +43,8 @@ class ManagerUpdateTransaction(BootstrapTransaction):
         files = verify_archive(safe_path(folder / 'manager-release.zip').read_bytes(),
                                manifest)
         snapshot = read_app_backup(folder)
+        if digest(safe_path(folder / 'server.before.py').read_bytes()) != manifest['required_server_sha256']:
+            raise Refused('manager_saved_server_baseline_changed')
         for entry in manifest['files']:
             name = entry['path']
             if name.startswith('app/'):

@@ -86,7 +86,8 @@ def verify_manifest(raw, *, minimum_sequence=0, now=None,
     if (type(signed) is not dict or signed.keys() !=
             {'schema', 'sequence', 'issued_at', 'expires_at',
              'production_install_authorized', 'data_migrations', 'validation',
-             'files', 'archive_url', 'archive_sha256', 'archive_bytes'} or
+             'files', 'required_server_sha256', 'archive_url',
+             'archive_sha256', 'archive_bytes'} or
             signed['schema'] != 'rapbrain-manager-production-v1' or
             signed['production_install_authorized'] is not True or
             signed['data_migrations'] != [] or
@@ -103,7 +104,9 @@ def verify_manifest(raw, *, minimum_sequence=0, now=None,
             type(signed['archive_bytes']) is not int or
             not 0 < signed['archive_bytes'] <= MAX_ARCHIVE or
             type(signed['archive_sha256']) is not str or
-            not HEX.fullmatch(signed['archive_sha256'])):
+            not HEX.fullmatch(signed['archive_sha256']) or
+            type(signed['required_server_sha256']) is not str or
+            not HEX.fullmatch(signed['required_server_sha256'])):
         raise Refused('manager_release_freshness')
     entries = signed['files']
     if type(entries) is not list or not 0 < len(entries) <= len(ALLOWED):
@@ -120,6 +123,10 @@ def verify_manifest(raw, *, minimum_sequence=0, now=None,
         names.append(entry['path'])
     if names != sorted(set(names)):
         raise Refused('manager_file_order')
+    server_entry = next((entry for entry in entries if entry['path'] == 'server.py'), None)
+    if (server_entry is not None and
+            server_entry['baseline_sha256'] != signed['required_server_sha256']):
+        raise Refused('manager_server_baseline_mismatch')
     archive_url(signed['archive_url'])
     return signed
 
@@ -164,6 +171,8 @@ def verify_baseline(manifest, source, resources):
     """Bind a signed release to exact installed code, without opening data."""
     source = safe_path(source, directory=True)
     resources = safe_path(resources, directory=True)
+    if digest(safe_path(source / 'server.py').read_bytes()) != manifest['required_server_sha256']:
+        raise Refused('manager_required_server_changed')
     targets = {}
     for entry in manifest['files']:
         path = (resources / entry['path'][4:] if entry['path'].startswith('app/')

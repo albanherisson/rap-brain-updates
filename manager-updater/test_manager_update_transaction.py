@@ -16,6 +16,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from creative_release import Refused, canonical, digest
+from app_bundle_backup import save_app_backup
 from bootstrap_runtime_resources import RUNTIME_FILES
 from manager_offline_lifecycle import MacOfflineManagerLifecycle
 from manager_update_transaction import ManagerUpdateTransaction
@@ -112,6 +113,7 @@ class ManagerTransactionTests(unittest.TestCase):
             'files': [{'path': name, 'baseline_sha256': digest(self.before[name]),
                        'payload_sha256': digest(self.after[name])}
                       for name in sorted(self.after)],
+            'required_server_sha256': digest(self.before['server.py']),
             'archive_url': ('https://raw.githubusercontent.com/albanherisson/'
                             'rap-brain-updates/main/manager-stable/update-1.zip'),
             'archive_sha256': digest(self.archive),
@@ -239,6 +241,29 @@ class ManagerTransactionTests(unittest.TestCase):
         self.assertFalse((self.state / 'maintenance.ticket').exists())
         self.assert_code(self.before)
         self.assert_data()
+
+    def test_unselected_app_change_refused_before_signing(self):
+        dashboard = self.resources / 'dashboard_beta14.html'
+        dashboard.write_bytes(b'original dashboard')
+        for name in RUNTIME_FILES:
+            (self.resources / name).write_bytes(b'original signed resource')
+        folder = self.state / IDENTIFIER
+        folder.mkdir(mode=0o700)
+        save_app_backup(self.resources.parents[1], folder)
+        (self.source / 'server.py').write_bytes(self.after['server.py'])
+        self.launcher.write_bytes(self.after['app/launch_manager.py'])
+        dashboard.write_bytes(b'unreviewed injected dashboard')
+        called = []
+        inspector = lambda *_: {'server_process_seen': False,
+            'manager_process_seen': False, 'port_8765_listening': False}
+        lifecycle = MacOfflineManagerLifecycle(self.source, self.launcher,
+            self.state, self.signed, pinned_key=self.pin, inspector=inspector,
+            signer=lambda *_a, **_k: called.append(True) or True)
+        lifecycle.transaction_id = IDENTIFIER
+        lifecycle.assert_stopped = lambda: None
+        with self.assertRaises(Refused):
+            lifecycle._sign()
+        self.assertEqual(called, [])
 
     def test_crash_during_switch_rolls_back_on_original_attempt(self):
         result = self.tx([True]).install(self.signed, self.archive)

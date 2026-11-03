@@ -9,7 +9,9 @@ label must not be changed to claim that general installation works.
 pins the existing Manager publisher identity, authenticates a fresh Ed25519
 manifest before fetching an archive, checks exact archive and member hashes,
 restricts targets to `server.py` and reviewed Manager app resources, rejects
-data/library/configuration paths, and checks each installed baseline. Tests
+data/library/configuration paths, and checks each installed baseline including
+the server even for app-only releases. Before local signing, the lifecycle
+checks that every unselected app file still matches the complete backup. Tests
 cover payload tampering, replay, alternate hosts, extra archive members and
 live baseline drift. There is no production `manager-stable` publication yet.
 

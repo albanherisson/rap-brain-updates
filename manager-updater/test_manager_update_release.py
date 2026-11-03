@@ -34,6 +34,7 @@ class ManagerReleaseTest(unittest.TestCase):
                            'rollback': 'passed', 'runtime': 'passed'},
             'files': [{'path': 'server.py', 'baseline_sha256': digest(b'old'),
                        'payload_sha256': digest(self.payload)}],
+            'required_server_sha256': digest(b'old'),
             'archive_url': ('https://raw.githubusercontent.com/albanherisson/'
                             'rap-brain-updates/main/manager-stable/update-2.zip'),
             'archive_sha256': digest(self.archive),
@@ -70,6 +71,19 @@ class ManagerReleaseTest(unittest.TestCase):
                 self.manifest['files'][0]['path'] = name
                 with self.assertRaises(Refused):
                     self.verify()
+
+    def test_unselected_server_must_still_match_signed_baseline(self):
+        self.manifest['files'] = [{'path': 'app/launch_manager.py',
+            'baseline_sha256': digest(b'old launcher'),
+            'payload_sha256': digest(self.payload)}]
+        with tempfile.TemporaryDirectory() as root:
+            source = Path(root) / 'rap-brain'
+            resources = Path(root) / 'resources'
+            source.mkdir(); resources.mkdir()
+            (source / 'server.py').write_bytes(b'unreviewed server')
+            (resources / 'launch_manager.py').write_bytes(b'old launcher')
+            with self.assertRaises(Refused):
+                verify_baseline(self.verify(), source, resources)
 
     def test_tamper_replay_and_mirror_refused(self):
         raw = json.loads(self.signed())

@@ -7,7 +7,7 @@ PID. The one-click handoff and production entrypoint are still separate.
 import hashlib
 import os
 
-from app_bundle_backup import read_app_backup
+from app_bundle_backup import inventory, read_app_backup
 from bootstrap_runtime_resources import RUNTIME_FILES
 from creative_release import Refused, digest
 from creative_transaction import safe_path, fsync_dir
@@ -66,14 +66,33 @@ class MacOfflineManagerLifecycle(MacOfflineBootstrapLifecycle):
             candidate &= current == entry['payload_sha256']
         if baseline == candidate:
             raise Refused('manager_lifecycle_mixed_or_unchanged_code')
-        return 'baseline' if baseline else 'candidate'
+        state = 'baseline' if baseline else 'candidate'
+        server_entry = self.entries.get('server.py')
+        expected_server = (server_entry['payload_sha256']
+            if state == 'candidate' and server_entry else
+            self.release['required_server_sha256'])
+        if digest(safe_path(self.source / 'server.py').read_bytes()) != expected_server:
+            raise Refused('manager_lifecycle_server_changed')
+        return state
 
     def _sign(self):
         self.assert_stopped()
         state = self._code_state()
         folder = safe_path(self.state / self.transaction_id, directory=True)
         if state == 'candidate':
-            read_app_backup(folder)
+            original = read_app_backup(folder)
+            current = inventory(self.app)
+            if current.keys() != original.keys():
+                raise Refused('manager_lifecycle_app_inventory_changed')
+            for name, before in original.items():
+                selected = (self.entries.get('app/' + name.removeprefix('Contents/Resources/'))
+                    if name.startswith('Contents/Resources/') else None)
+                if selected is None:
+                    if current[name] != before:
+                        raise Refused('manager_lifecycle_unselected_app_changed')
+                elif (current[name]['sha256'] != selected['payload_sha256'] or
+                        current[name]['mode'] != before['mode']):
+                    raise Refused('manager_lifecycle_candidate_app_changed')
             verified = self.signer(self.app, folder, self.source, self.launcher,
                                    inspector=self.inspector)
         elif (folder / 'app-backup.json').is_file():
