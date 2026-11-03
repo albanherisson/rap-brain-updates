@@ -337,6 +337,11 @@ class ManagerUpdateTransaction(BootstrapTransaction):
                 verify_baseline(manifest, self.source, self.resources)
                 from creative_readiness import assert_no_pending_jobs
                 assert_no_pending_jobs(self.source)
+                folder = self.state / identifier
+                if not folder.exists():
+                    folder.mkdir(mode=0o700)
+                    fsync_dir(self.state)
+                safe_path(folder, directory=True)
                 if not lease.start_and_check():
                     lease.stop_candidate()
                     self._assert_excluded(lease)

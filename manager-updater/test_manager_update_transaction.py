@@ -213,6 +213,7 @@ class ManagerTransactionTests(unittest.TestCase):
                                     .read_text())['phase'], 'aborted')
         self.assert_code(self.before)
         self.assert_data()
+        self.assertTrue((self.state / IDENTIFIER).is_dir())
 
     def test_failed_health_restores_exact_code(self):
         result = self.tx([False, True]).install(self.signed, self.archive)
@@ -263,6 +264,40 @@ class ManagerTransactionTests(unittest.TestCase):
         self.assertFalse((self.state / 'maintenance.ticket').exists())
         self.assertFalse((self.state / 'bootstrap-intent.json').exists())
         self.assert_code(self.after)
+        self.assert_data()
+
+    def test_offline_handoff_abort_prepares_signature_folder_and_clears_ticket(self):
+        (self.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
+        for name in RUNTIME_FILES:
+            (self.resources / name).write_bytes(b'original signed resource')
+
+        class Exited:
+            def poll(self): return 0
+
+        class Candidate:
+            def __init__(self, source, state, supervisor, expected_server_sha256, *, port):
+                self.expected_server_sha256 = expected_server_sha256
+                self.current = None
+
+            def start_and_check(self):
+                self.lock.release_to_ticketed_candidate()
+                self.current = Exited()
+                return True
+
+        inspector = lambda *_: {'server_process_seen': False,
+            'manager_process_seen': False, 'port_8765_listening': False}
+        lifecycle = MacOfflineManagerLifecycle(self.source, self.launcher,
+            self.state, self.signed, pinned_key=self.pin, inspector=inspector,
+            unchanged_verifier=lambda *_a, **_k: True,
+            candidate_factory=Candidate)
+        transaction = ManagerUpdateTransaction(self.source, self.launcher,
+            self.state, lifecycle, pinned_key=self.pin)
+        with OfflineFixture(self.state, [True]).maintenance(self.source, self.launcher):
+            result = transaction.abort_handoff_before_journal(self.signed, IDENTIFIER)
+        self.assertEqual(result['state'], 'aborted')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertTrue((self.state / IDENTIFIER).is_dir())
+        self.assert_code(self.before)
         self.assert_data()
 
     def test_offline_lifecycle_restores_old_app_after_failed_health(self):

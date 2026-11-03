@@ -59,6 +59,9 @@ checks the attempt identity and any saved release, and either aborts unchanged
 pre-journal code or resumes the original journal. Its tests use synthetic
 SQLite/configuration. Terminal-journal cleanup, capability packaging and
 macOS process validation are still missing; it is not installed.
+The unchanged-code abort now creates its private attempt directory before the
+macOS lifecycle verifies the application signature. A disposable lifecycle
+test covers the ticket cleanup and confirms synthetic data is unchanged.
 
 ## Remaining implementation gates
 
