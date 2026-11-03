@@ -21,6 +21,13 @@ updates, and restores exact code after failed health. It **refuses without a
 reviewed lifecycle**. Disposable tests cover commit, rollback, crash recovery,
 replay and missing lifecycle. No installed Manager calls this transaction.
 
+`manager_offline_lifecycle.py` now adapts the existing exclusive lifetime
+lock, private maintenance ticket, local app signing, owned candidate restart
+and exact restored-app signature verification to a general signed release.
+Disposable tests cover terminal ticket cleanup for both commit and failed
+health rollback. This adapter has not yet passed macOS code-signing or real
+process tests and is not connected to the installed Manager.
+
 ## Remaining implementation gates
 
 1. Review the transaction and exercise signing, authenticated HTTP health,

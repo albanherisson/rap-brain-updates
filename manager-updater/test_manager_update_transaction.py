@@ -16,6 +16,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from creative_release import Refused, canonical, digest
+from bootstrap_runtime_resources import RUNTIME_FILES
+from manager_offline_lifecycle import MacOfflineManagerLifecycle
 from manager_update_transaction import ManagerUpdateTransaction
 
 
@@ -161,6 +163,80 @@ class ManagerTransactionTests(unittest.TestCase):
         with self.assertRaises(Refused):
             self.tx([True]).install(self.signed, self.archive)
         self.assertFalse((self.state / 'manager-transaction.json').exists())
+        self.assert_code(self.before)
+        self.assert_data()
+
+    def test_offline_lifecycle_signs_and_clears_ticket_only_after_commit(self):
+        (self.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
+        for name in RUNTIME_FILES:
+            (self.resources / name).write_bytes(b'original signed resource')
+
+        class Exited:
+            def poll(self):
+                return 0
+
+        class Candidate:
+            def __init__(self, source, state, supervisor, expected_server_sha256, *, port):
+                self.expected_server_sha256 = expected_server_sha256
+                self.lock = None
+                self.current = None
+
+            def start_and_check(self):
+                self.lock.release_to_ticketed_candidate()
+                self.current = Exited()
+                return True
+
+        inspector = lambda *_: {'server_process_seen': False,
+            'manager_process_seen': False, 'port_8765_listening': False}
+        lifecycle = MacOfflineManagerLifecycle(self.source, self.launcher,
+            self.state, self.signed, pinned_key=self.pin, inspector=inspector,
+            signer=lambda *_a, **_k: True,
+            restored_verifier=lambda *_a, **_k: True,
+            unchanged_verifier=lambda *_a, **_k: True,
+            candidate_factory=Candidate)
+        tx = ManagerUpdateTransaction(self.source, self.launcher, self.state,
+                                      lifecycle, pinned_key=self.pin)
+        result = tx.install(self.signed, self.archive)
+        self.assertEqual(result['state'], 'committed')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertFalse((self.state / 'bootstrap-intent.json').exists())
+        self.assert_code(self.after)
+        self.assert_data()
+
+    def test_offline_lifecycle_restores_old_app_after_failed_health(self):
+        (self.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
+        for name in RUNTIME_FILES:
+            (self.resources / name).write_bytes(b'original signed resource')
+        outcomes = iter([False, True])
+        checks = []
+
+        class Exited:
+            def poll(self): return 0
+
+        class Candidate:
+            def __init__(self, source, state, supervisor, expected_server_sha256, *, port):
+                self.expected_server_sha256 = expected_server_sha256
+                self.lock = None
+                self.current = None
+
+            def start_and_check(self):
+                self.lock.release_to_ticketed_candidate()
+                self.current = Exited()
+                return next(outcomes)
+
+        inspector = lambda *_: {'server_process_seen': False,
+            'manager_process_seen': False, 'port_8765_listening': False}
+        lifecycle = MacOfflineManagerLifecycle(self.source, self.launcher,
+            self.state, self.signed, pinned_key=self.pin, inspector=inspector,
+            signer=lambda *_a, **_k: checks.append('candidate') or True,
+            restored_verifier=lambda *_a, **_k: checks.append('restored') or True,
+            unchanged_verifier=lambda *_a, **_k: True,
+            candidate_factory=Candidate)
+        result = ManagerUpdateTransaction(self.source, self.launcher, self.state,
+            lifecycle, pinned_key=self.pin).install(self.signed, self.archive)
+        self.assertEqual(result['state'], 'rolled_back')
+        self.assertEqual(checks, ['candidate', 'restored'])
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
         self.assert_code(self.before)
         self.assert_data()
 
