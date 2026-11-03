@@ -33,20 +33,30 @@ The macOS CI suite now includes a disposable, genuinely code-signed app test
 that forces failed health and checks exact signature-preserving restoration;
 its macOS job must pass before the capability can advance.
 
+An unconnected handoff prototype now stages the signed release in a private
+directory, binds the Manager parent's retained server handle, creates the
+existing maintenance ticket, and stops that exact idle server cooperatively.
+The external helper requires a nonce on an inherited pipe, proves the parent
+actually exited, then resumes the same ticket and transaction. It can restart
+unchanged original code for a failed pre-journal validation. These paths have
+disposable unit tests only. A refused stop leaves its maintenance marker for
+authenticated recovery, so this prototype must not be enabled as a button.
+The helper and its dependencies also require a reviewed, signed deployment
+outside the replaceable app bundle. The installed Beta 14 has none of this.
+
 ## Remaining implementation gates
 
 1. Review the transaction and exercise signing, authenticated HTTP health,
    interruption and rollback with the real macOS app on disposable copies.
    Keep the live database and configuration outside the signed archive and
    never restore over them automatically.
-2. The HTTP child may only record an authenticated request. The parent owns
-   the server process. A Manager app update requires a separately signed,
-   locally launched helper to own the handoff while the Manager exits. It must
-   authenticate the exact old process, stop only that process, hold exclusion,
-   replace code atomically, sign the changed app on macOS, start the reviewed
-   candidate, check authenticated health, and restore exact backup on failure.
-   Recovery after a crash must resume the original journal without pulling a
-   fresh release or silently starting a second attempt.
+2. Wire an authenticated request from the HTTP child to the parent with the
+   retained Popen handle. Package and verify the external helper and all of
+   its imports outside the app being replaced; exit the parent after handing
+   off the lifetime lock. Provide a safe recovery entrypoint for failed stop,
+   timeout and interrupted phases, without pulling a fresh release or
+   silently starting a second attempt. Exercise actual process ownership and
+   exclusion on disposable macOS copies.
 3. Rehearse success, failed health, interrupted phases and exact rollback on
    disposable macOS copies, including the app's extended attributes and a
    synthetic SQLite/config. Reject a busy or unowned server. Verify signed

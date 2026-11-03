@@ -191,68 +191,160 @@ class ManagerUpdateTransaction(BootstrapTransaction):
             files = verify_archive(archive, manifest)
             verify_baseline(manifest, self.source, self.resources)
             with self.lifecycle.maintenance(self.source, self.launcher) as lease:
+                return self._install_with_lease(lease, manifest, files, signed_manifest, archive)
+
+    def _install_with_lease(self, lease, manifest, files, signed_manifest, archive):
+        self._assert_excluded(lease)
+        from creative_readiness import assert_no_pending_jobs
+        assert_no_pending_jobs(self.source)
+        targets = verify_baseline(manifest, self.source, self.resources)
+        identifier = lease.transaction_id
+        if (type(identifier) is not str or len(identifier) != 32 or
+                any(c not in '0123456789abcdef' for c in identifier)):
+            raise Refused('manager_attempt_id_required')
+        folder = self.state / identifier
+        folder.mkdir(mode=0o700)
+        fsync_dir(self.state)
+        record = {'id': identifier, 'source': str(self.source),
+            'launcher': str(self.launcher), 'schema': manifest['schema'],
+            'sequence': manifest['sequence'],
+            'server_mode': stat.S_IMODE(safe_path(self.server).stat().st_mode),
+            'server_baseline': digest(safe_path(self.server).read_bytes()),
+            'baselines': {entry['path']: entry['baseline_sha256']
+                          for entry in manifest['files']}}
+        self.record(record, 'preparing')
+        try:
+            atomic_write(folder / 'server.before.py',
+                         safe_path(self.server).read_bytes())
+            atomic_write(folder / 'manager-release.json', signed_manifest)
+            atomic_write(folder / 'manager-release.zip', archive)
+            save_app_backup(self.app, folder)
+            Transaction(self.source, self.state, self.lifecycle).backup(
+                folder, safe_path(self.source / 'creative_engine.py').read_bytes())
+            self._saved(folder)
+            self.record(record, 'backup_ready')
+            self._assert_excluded(lease)
+            assert_no_pending_jobs(self.source)
+            verify_baseline(manifest, self.source, self.resources)
+            self.record(record, 'switch_pending')
+            for entry in manifest['files']:
+                name = entry['path']
                 self._assert_excluded(lease)
+                atomic_write(targets[name], files[name],
+                    stat.S_IMODE(safe_path(targets[name]).stat().st_mode))
+            self.record(record, 'switched')
+            if not lease.start_and_check():
+                raise Refused('manager_health_failed')
+            if any(digest(safe_path(targets[entry['path']]).read_bytes()) !=
+                    entry['payload_sha256'] for entry in manifest['files']):
+                raise Refused('manager_installed_hash_changed')
+        except Exception:
+            if ((folder / 'app-backup.json').is_file() and
+                    (folder / 'backup.json').is_file()):
+                return self._restore(record, folder, manifest, lease)
+            self._assert_excluded(lease)
+            self._baseline_record(record)
+            phase = 'aborted' if lease.start_and_check() else 'restored_stopped'
+            if phase == 'restored_stopped':
+                lease.stop_candidate()
+                self._assert_excluded(lease)
+            self.record(record, phase)
+            raise
+        self.record(record, 'committed')
+        atomic_write(self.receipt,
+                     json.dumps({'sequence': manifest['sequence']}).encode())
+        return {'state': 'committed', 'installation_performed': True,
+                'backup_id': identifier, 'database_replaced': False}
+
+    def install_handed_off(self, signed_manifest, archive, identifier):
+        """Resume an authenticated stopped handoff from the Manager parent.
+
+        The parent must have stopped only its proven owned server, left the
+        exact private ticket/intent in place, and exited. A separate helper
+        proves that exit before calling this method. No new ticket is made.
+        """
+        with self.locked():
+            if os.path.lexists(self.journal):
+                previous = self._journal_record()
+                if previous['phase'] not in TERMINAL:
+                    return self.recover_locked()
+            if not (os.path.lexists(self.state / 'bootstrap-intent.json') and
+                    os.path.lexists(self.state / 'maintenance.ticket')):
+                raise Refused('manager_handoff_ticket_missing')
+            if os.path.lexists(self.state / 'maintenance-intent.json'):
+                raise Refused('manager_other_recovery_required')
+            for name, terminal in (
+                    ('bootstrap-transaction.json', TERMINAL),
+                    ('transaction.json', TERMINAL),
+                    ('trust-rotation.json', ('committed', 'rolled_back'))):
+                path = self.state / name
+                if os.path.lexists(path):
+                    prior = read_json(path)
+                    if type(prior) is not dict or prior.get('phase') not in terminal:
+                        raise Refused('manager_other_recovery_required')
+            minimum = self._read_receipt()['sequence'] if os.path.lexists(self.receipt) else 0
+            if os.path.lexists(self.journal):
+                previous = self._journal_record()
+                if previous['phase'] == 'committed':
+                    minimum = max(minimum, previous['sequence'])
+                    atomic_write(self.receipt, json.dumps({'sequence': minimum}).encode())
+            manifest = verify_manifest(signed_manifest, minimum_sequence=minimum,
+                                       pinned_key=self.pin)
+            files = verify_archive(archive, manifest)
+            verify_baseline(manifest, self.source, self.resources)
+            resume = getattr(self.lifecycle, 'resume_maintenance', None)
+            if not callable(resume):
+                raise Refused('manager_handoff_resume_required')
+            with resume(self.source, self.launcher, identifier) as lease:
+                if lease.transaction_id != identifier:
+                    raise Refused('manager_handoff_attempt_changed')
+                return self._install_with_lease(lease, manifest, files,
+                                                signed_manifest, archive)
+
+    def abort_handoff_before_journal(self, signed_manifest, identifier):
+        """Restart unchanged old code after a verified, stopped pre-journal handoff.
+
+        An unknown or partly switched state remains blocked for recovery. This
+        method never restores data, writes application code, or signals a PID.
+        """
+        with self.locked():
+            if os.path.lexists(self.journal):
+                previous = self._journal_record()
+                if previous['phase'] not in TERMINAL:
+                    raise Refused('manager_journal_recovery_required')
+                if previous['phase'] == 'committed':
+                    minimum = (self._read_receipt()['sequence']
+                               if os.path.lexists(self.receipt) else 0)
+                    atomic_write(self.receipt, json.dumps({
+                        'sequence': max(minimum, previous['sequence'])}).encode())
+            from strict_json import parse_signed_json
+            issued = parse_signed_json(signed_manifest)['signed_payload']['issued_at']
+            manifest = verify_manifest(signed_manifest, pinned_key=self.pin, now=issued)
+            verify_baseline(manifest, self.source, self.resources)
+            resume = getattr(self.lifecycle, 'resume_maintenance', None)
+            if not callable(resume):
+                raise Refused('manager_handoff_resume_required')
+            with resume(self.source, self.launcher, identifier) as lease:
+                if lease.transaction_id != identifier:
+                    raise Refused('manager_handoff_attempt_changed')
+                self._assert_excluded(lease)
+                verify_baseline(manifest, self.source, self.resources)
                 from creative_readiness import assert_no_pending_jobs
                 assert_no_pending_jobs(self.source)
-                targets = verify_baseline(manifest, self.source, self.resources)
-                identifier = lease.transaction_id
-                if (type(identifier) is not str or len(identifier) != 32 or
-                        any(c not in '0123456789abcdef' for c in identifier)):
-                    raise Refused('manager_attempt_id_required')
-                folder = self.state / identifier
-                folder.mkdir(mode=0o700)
-                fsync_dir(self.state)
+                if not lease.start_and_check():
+                    lease.stop_candidate()
+                    self._assert_excluded(lease)
+                    raise Refused('manager_old_server_health_failed')
                 record = {'id': identifier, 'source': str(self.source),
                     'launcher': str(self.launcher), 'schema': manifest['schema'],
                     'sequence': manifest['sequence'],
                     'server_mode': stat.S_IMODE(safe_path(self.server).stat().st_mode),
-                    'server_baseline': digest(safe_path(self.server).read_bytes()),
+                    'server_baseline': manifest['required_server_sha256'],
                     'baselines': {entry['path']: entry['baseline_sha256']
                                   for entry in manifest['files']}}
-                self.record(record, 'preparing')
-                try:
-                    atomic_write(folder / 'server.before.py',
-                                 safe_path(self.server).read_bytes())
-                    atomic_write(folder / 'manager-release.json', signed_manifest)
-                    atomic_write(folder / 'manager-release.zip', archive)
-                    save_app_backup(self.app, folder)
-                    Transaction(self.source, self.state, self.lifecycle).backup(
-                        folder, safe_path(self.source / 'creative_engine.py').read_bytes())
-                    self._saved(folder)
-                    self.record(record, 'backup_ready')
-                    self._assert_excluded(lease)
-                    assert_no_pending_jobs(self.source)
-                    verify_baseline(manifest, self.source, self.resources)
-                    self.record(record, 'switch_pending')
-                    for entry in manifest['files']:
-                        name = entry['path']
-                        self._assert_excluded(lease)
-                        atomic_write(targets[name], files[name],
-                            stat.S_IMODE(safe_path(targets[name]).stat().st_mode))
-                    self.record(record, 'switched')
-                    if not lease.start_and_check():
-                        raise Refused('manager_health_failed')
-                    if any(digest(safe_path(targets[entry['path']]).read_bytes()) !=
-                            entry['payload_sha256'] for entry in manifest['files']):
-                        raise Refused('manager_installed_hash_changed')
-                except Exception:
-                    if ((folder / 'app-backup.json').is_file() and
-                            (folder / 'backup.json').is_file()):
-                        return self._restore(record, folder, manifest, lease)
-                    self._assert_excluded(lease)
-                    self._baseline_record(record)
-                    phase = 'aborted' if lease.start_and_check() else 'restored_stopped'
-                    if phase == 'restored_stopped':
-                        lease.stop_candidate()
-                        self._assert_excluded(lease)
-                    self.record(record, phase)
-                    raise
-                self.record(record, 'committed')
-                atomic_write(self.receipt,
-                             json.dumps({'sequence': manifest['sequence']}).encode())
-                return {'state': 'committed', 'installation_performed': True,
-                        'backup_id': identifier, 'database_replaced': False}
-
+                self.record(record, 'aborted')
+                return {'state': 'aborted', 'installation_performed': False,
+                        'database_replaced': False}
     def _read_receipt(self):
         path = safe_path(self.receipt)
         if (path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077 or

@@ -154,6 +154,34 @@ class ManagerTransactionTests(unittest.TestCase):
         self.assertFalse((self.state / 'manager-transaction.json').exists())
         self.assert_code(self.before)
 
+    def test_handoff_reuses_existing_ticket_and_attempt(self):
+        transaction = self.tx([True])
+        with transaction.lifecycle.maintenance(self.source, self.launcher):
+            result = self.tx([True]).install_handed_off(
+                self.signed, self.archive, IDENTIFIER)
+        self.assertEqual(result['state'], 'committed')
+        self.assertEqual(result['backup_id'], IDENTIFIER)
+        self.assert_code(self.after)
+        self.assert_data()
+
+    def test_handoff_refuses_without_parent_ticket(self):
+        with self.assertRaises(Refused):
+            self.tx([True]).install_handed_off(self.signed, self.archive,
+                                               IDENTIFIER)
+        self.assert_code(self.before)
+
+    def test_handoff_abort_restarts_unchanged_original(self):
+        transaction = self.tx([True])
+        with transaction.lifecycle.maintenance(self.source, self.launcher):
+            result = self.tx([True]).abort_handoff_before_journal(
+                self.signed, IDENTIFIER)
+        self.assertEqual(result['state'], 'aborted')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertEqual(json.loads((self.state / 'manager-transaction.json')
+                                    .read_text())['phase'], 'aborted')
+        self.assert_code(self.before)
+        self.assert_data()
+
     def test_failed_health_restores_exact_code(self):
         result = self.tx([False, True]).install(self.signed, self.archive)
         self.assertEqual(result['state'], 'rolled_back')
