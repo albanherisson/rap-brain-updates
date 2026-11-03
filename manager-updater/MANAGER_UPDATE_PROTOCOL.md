@@ -31,7 +31,10 @@ health rollback. This adapter has not yet passed macOS code-signing or real
 process tests and is not connected to the installed Manager.
 The macOS CI suite now includes a disposable, genuinely code-signed app test
 that forces failed health and checks exact signature-preserving restoration;
-its macOS job must pass before the capability can advance.
+its macOS job must pass before the capability can advance. A real disposable
+parent/pipe exit test now runs on macOS as well. This container hides its own
+child processes from `ps`, so that one integration case is skipped locally;
+it is not counted as a local process proof.
 
 An unconnected handoff prototype now stages the signed release in a private
 directory, binds the Manager parent's retained server handle, creates the

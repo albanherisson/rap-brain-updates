@@ -1,12 +1,14 @@
-"""Exact parent-exit proof from a private pipe; no real process signals."""
+"""Exact parent-exit proof from a private pipe; no process is signalled."""
 import hashlib
 import os
 import subprocess
+import sys
 import unittest
 from unittest.mock import patch
 
 from creative_release import Refused
 from manager_handoff_proof import parent_has_exited, wait_for_parent_exit
+from process_start_identity import read_start
 
 
 class ParentHandoffProofTest(unittest.TestCase):
@@ -55,6 +57,37 @@ class ParentHandoffProofTest(unittest.TestCase):
             'Fri Oct 30 12:02:02 2026\n', '')
         with patch('manager_handoff_proof.subprocess.run', return_value=reused):
             self.assertTrue(parent_has_exited(42, self.START))
+
+    def test_real_disposable_parent_exits_before_helper_continues(self):
+        nonce = os.urandom(32)
+        reader, writer = os.pipe()
+        code = ('import os,sys,time; time.sleep(.2); '
+                'os.write(int(sys.argv[1]), bytes.fromhex(sys.argv[2])); '
+                'os.close(int(sys.argv[1]))')
+        parent = subprocess.Popen([sys.executable, '-B', '-c', code,
+                                   str(writer), nonce.hex()],
+                                  pass_fds=(writer,), stdin=subprocess.DEVNULL,
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+        os.close(writer)
+        try:
+            try:
+                identity = read_start(parent.pid)
+            except Refused:
+                if sys.platform != 'darwin':
+                    self.skipTest('disposable child hidden from ps in this Linux container')
+                raise
+            self.assertEqual(parent.wait(timeout=5), 0)
+            self.assertTrue(wait_for_parent_exit(reader,
+                hashlib.sha256(nonce).hexdigest(), parent.pid, identity,
+                timeout=2))
+            reader = None  # the proof owns and closes it
+        finally:
+            if reader is not None:
+                os.close(reader)
+            if parent.poll() is None:
+                parent.terminate()
+                parent.wait(timeout=5)
 
 
 if __name__ == '__main__':
