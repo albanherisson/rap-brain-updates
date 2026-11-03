@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from creative_release import Refused
-from manager_update_helper import run_handoff, staged_release
+from manager_update_helper import report_result, run_handoff, staged_release
 
 
 class ManagerHelperTest(unittest.TestCase):
@@ -37,6 +37,18 @@ class ManagerHelperTest(unittest.TestCase):
         (self.state / ('handoff-' + self.ID) / 'release.zip').chmod(0o644)
         with self.assertRaises(Refused):
             staged_release(self.state, self.ID)
+
+    def test_result_survives_parent_http_exit_without_exposing_payload(self):
+        report = report_result(self.state, self.ID,
+            {'state': 'committed', 'backup_id': self.ID,
+             'secret': 'do not expose'})
+        self.assertEqual(report, {'attempt': self.ID, 'state': 'committed',
+            'installation_performed': True, 'backup_id': self.ID})
+        saved = self.state / 'manager-handoff-result.json'
+        self.assertEqual(saved.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn(b'secret', saved.read_bytes())
+        with self.assertRaises(Refused):
+            report_result(self.state, self.ID, {'state': 'running'})
 
     def test_no_stage_read_if_parent_not_confirmed(self):
         with patch('manager_update_helper.staged_release') as read_stage:

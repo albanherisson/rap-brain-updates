@@ -49,6 +49,10 @@ request is handed to the parent that retains the owned server handle; the
 parent exits after releasing the helper pipe. The copy smoke rejects a POST
 without a token and leaves a synthetic server unchanged. This candidate is
 not a production release and the helper bundle/recovery packaging is missing.
+The helper now records a small private terminal result after the HTTP parent
+exits; a pending maintenance ticket is displayed as requiring a check instead
+of reporting a false success. A crash before the report still needs a
+dedicated recovery entrypoint and macOS process tests.
 
 ## Remaining implementation gates
 

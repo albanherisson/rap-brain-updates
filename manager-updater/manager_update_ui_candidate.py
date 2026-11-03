@@ -45,8 +45,16 @@ def prepare_launcher(raw):
     source = once(source, get_anchor,
         "  if urlsplit(self.path).path=='/api/rapbrain/manager-update-state':\n"
         "   f=root/'manager-update-result.json'\n"
-        "   try:result=json.loads(f.read_text()) if f.is_file() else {'state':'idle','installation_performed':False}\n"
-        "   except (OSError,ValueError):result={'state':'refused','installation_performed':False}\n"
+        "   secure=backup_root/'secure-update'\n"
+        "   try:\n"
+        "    if (secure/'maintenance.ticket').exists():result={'state':'check_required','installation_performed':None}\n"
+        "    elif f.is_file():result=json.loads(f.read_text())\n"
+        "    elif (secure/'manager-handoff-result.json').is_file():\n"
+        "     from pending_attempt_recovery import _private_json\n"
+        "     result=_private_json(secure/'manager-handoff-result.json',4096)\n"
+        "     if type(result) is not dict or result.get('state') not in ('committed','rolled_back','aborted','restored_stopped','check_required'):raise ValueError('invalid_manager_result')\n"
+        "    else:result={'state':'idle','installation_performed':False}\n"
+        "   except Exception:result={'state':'check_required','installation_performed':None}\n"
         "   return self.send(200,json.dumps(result).encode(),'application/json')\n"
         + get_anchor)
     post_anchor = "  if endpoint=='/api/rapbrain/creative-install':\n"

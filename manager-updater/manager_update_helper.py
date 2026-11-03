@@ -12,7 +12,7 @@ import json
 import sys
 
 from creative_release import Refused
-from creative_transaction import safe_path
+from creative_transaction import atomic_write, safe_path
 from mac_offline_bootstrap_gate import assert_offline
 from manager_handoff_proof import wait_for_parent_exit
 from manager_offline_lifecycle import MacOfflineManagerLifecycle
@@ -21,6 +21,28 @@ from manager_update_transaction import ManagerUpdateTransaction
 
 
 IDENTIFIER = re.compile(r'[0-9a-f]{32}\Z')
+
+
+def report_result(state, identifier, result):
+    """Keep the outcome after the Manager HTTP process has exited."""
+    if (type(identifier) is not str or not IDENTIFIER.fullmatch(identifier) or
+            type(result) is not dict or
+            result.get('state') not in ('committed', 'rolled_back', 'aborted',
+                                        'restored_stopped', 'check_required')):
+        raise Refused('manager_handoff_result_invalid')
+    state = safe_path(state, directory=True)
+    if state.stat().st_uid != os.getuid() or state.stat().st_mode & 0o077:
+        raise Refused('manager_handoff_state_unsafe')
+    report = {'attempt': identifier, 'state': result['state'],
+              'installation_performed': (result['state'] == 'committed'
+                  if result['state'] != 'check_required' else None)}
+    if type(result.get('backup_id')) is str and result['backup_id'] == identifier:
+        report['backup_id'] = identifier
+    if type(result.get('reason')) is str:
+        report['reason'] = result['reason'][:100]
+    atomic_write(state / 'manager-handoff-result.json',
+                 json.dumps(report, sort_keys=True).encode())
+    return report
 
 
 def staged_release(state, identifier):
@@ -88,6 +110,7 @@ def main(argv=None):
     state = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
     result = run_handoff(source, launcher, state, args.attempt, args.read_fd,
                          args.nonce_sha256, args.parent_pid, args.parent_start)
+    report_result(state, args.attempt, result)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True), flush=True)
     return 0 if result.get('state') == 'committed' else 2
 
@@ -96,6 +119,14 @@ if __name__ == '__main__':
     try:
         raise SystemExit(main())
     except Exception as exc:
+        try:
+            if len(sys.argv) > 1 and '--attempt' in sys.argv:
+                identifier = sys.argv[sys.argv.index('--attempt') + 1]
+                report_result(Path.home() / 'Downloads' / 'RapBrainManagerBackups' /
+                    'secure-update', identifier,
+                    {'state': 'check_required', 'reason': type(exc).__name__})
+        except (IndexError, OSError, ValueError):
+            pass
         print('INSTALLATION REFUSEE : ' + type(exc).__name__ + ' / ' +
               (str(exc) if isinstance(exc, ValueError) else 'verification_failed'),
               file=sys.stderr)
