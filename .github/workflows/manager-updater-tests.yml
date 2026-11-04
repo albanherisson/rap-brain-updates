@@ -73,6 +73,10 @@ jobs:
           mkdir "$RUNNER_TEMP/capability-installer-verify"
           /usr/bin/ditto -x -k "$RUNNER_TEMP/Manager_Capability_Copy_Test.zip" "$RUNNER_TEMP/capability-installer-verify"
           /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/capability-installer-verify/Activer les mises à jour Rap Brain.app"
+      - name: Check pinned public candidate for Mac publisher
+        run: |
+          curl -fsSL 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/19d84a4db0713a658265df3358a68c1adc6388be/manager-capability/capability-1.zip' -o "$RUNNER_TEMP/capability-1.zip"
+          echo "963ca5733de48d7d336b1c214a0b8f308aa582aa3484a5ae51769daafe0cf8a7  $RUNNER_TEMP/capability-1.zip" | shasum -a 256 -c
       - uses: actions/upload-artifact@v4
         with:
           name: rapbrain-finder-installer-macos
