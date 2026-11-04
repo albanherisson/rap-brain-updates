@@ -2,7 +2,9 @@
 import hashlib
 import io
 from pathlib import Path
+import shutil
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from zipfile import ZipFile
@@ -44,6 +46,8 @@ class OwnerSigningTests(unittest.TestCase):
         # the immutable signed bytes are used in the real publisher.
         self.source.joinpath('server.py').write_bytes(b'synthetic server')
         self.source.joinpath('creative_engine.py').write_bytes(b'synthetic engine')
+        self.backups = self.home / 'Downloads' / 'RapBrainManagerBackups'
+        self.backups.mkdir()
         self.db = self.source / 'data' / 'rapbrain.sqlite3'
         self.db.parent.mkdir()
         self.db.write_bytes(b'do-not-read-or-change')
@@ -55,9 +59,14 @@ class OwnerSigningTests(unittest.TestCase):
              patch.object(publisher, 'CREATIVE_SHA256', publisher.digest(b'synthetic engine')), \
              patch.object(publisher.subprocess, 'run') as codesign:
             codesign.return_value.returncode = 0
+            rehearsed = []
             result = publisher.prepare(self.home, ARCHIVE.read_bytes(), self.key,
-                                       now=1_793_820_000)
+                now=1_793_820_000,
+                rehearsal=lambda app, code, state: rehearsed.append(
+                    (app, publisher.digest(code), state)) or True)
         codesign.assert_called_once()
+        self.assertEqual(rehearsed[0][1], publisher.PAYLOAD_SHA256)
+        self.assertEqual(rehearsed[0][2], self.backups)
         with ZipFile(io.BytesIO(result)) as zipped:
             self.assertEqual(zipped.namelist(),
                 ['manager-stable/manifest.json', 'manager-stable/update-1.zip'])
@@ -78,6 +87,24 @@ class OwnerSigningTests(unittest.TestCase):
                 publisher.prepare(self.home, ARCHIVE.read_bytes(), self.key,
                                   now=1_793_820_000)
         codesign.assert_not_called()
+
+    def test_copy_signing_and_exact_rollback_do_not_change_active_app(self):
+        app = self.resources.parents[1]
+        before = publisher.app_inventory(app)
+        with ZipFile(ARCHIVE) as zipped:
+            payload = zipped.read(publisher.MEMBER)
+        commands = []
+        def run(args, **_kwargs):
+            commands.append(args)
+            if args[0] == '/usr/bin/ditto':
+                shutil.copytree(args[1], args[2], copy_function=shutil.copy2)
+            return SimpleNamespace(returncode=0)
+        self.assertTrue(publisher.rehearse_on_copy(app, payload, self.backups,
+                                                    runner=run))
+        self.assertEqual(publisher.app_inventory(app), before)
+        self.assertEqual([c[0] for c in commands].count('/usr/bin/ditto'), 3)
+        self.assertEqual([c[0] for c in commands].count('/usr/bin/codesign'), 5)
+        self.assertEqual(list(self.backups.iterdir()), [])
 
 
 if __name__ == '__main__':

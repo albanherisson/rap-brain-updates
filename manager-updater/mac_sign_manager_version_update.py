@@ -153,7 +153,73 @@ def public_zip(files):
     return buffer.getvalue()
 
 
-def prepare(home, archive, key_path, *, now=None):
+def app_inventory(app):
+    output = {}
+    for path in sorted(app.rglob('*')):
+        if path.is_symlink():
+            raise ValueError('publisher_copy_symlink_refused')
+        if path.is_file():
+            item = path.stat()
+            if not stat.S_ISREG(item.st_mode):
+                raise ValueError('publisher_copy_special_file')
+            output[str(path.relative_to(app))] = (digest(path.read_bytes()),
+                stat.S_IMODE(item.st_mode))
+        elif not path.is_dir():
+            raise ValueError('publisher_copy_special_file')
+    return output
+
+
+def rehearse_on_copy(app, payload, backup_root, *, runner=subprocess.run):
+    """Exercise Mac signing and exact restoration entirely in private copies."""
+    backup_root = Path(backup_root)
+    if not backup_root.is_dir() or backup_root.is_symlink():
+        raise ValueError('publisher_backup_root_missing')
+    original_inventory = app_inventory(app)
+    if not original_inventory:
+        raise ValueError('publisher_original_app_empty')
+    with tempfile.TemporaryDirectory(prefix='manager-version-copy-', dir=backup_root) as temp:
+        root = Path(temp)
+        original = root / 'original.app'
+        candidate = root / 'candidate.app'
+        restored = root / 'restored.app'
+        for destination in (original, candidate):
+            result = runner(['/usr/bin/ditto', str(app), str(destination)],
+                            capture_output=True, stdin=subprocess.DEVNULL,
+                            timeout=90)
+            if result.returncode or app_inventory(destination) != original_inventory:
+                raise ValueError('publisher_app_copy_changed')
+            result = runner(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                             str(destination)], capture_output=True,
+                            stdin=subprocess.DEVNULL, timeout=90)
+            if result.returncode:
+                raise ValueError('publisher_original_copy_signature_invalid')
+        launcher = candidate / 'Contents' / 'Resources' / 'launch_manager.py'
+        if digest(exact_file(launcher)) != LAUNCHER_SHA256:
+            raise ValueError('publisher_copy_baseline_changed')
+        launcher.write_bytes(payload)
+        result = runner(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
+                         str(candidate)], capture_output=True,
+                        stdin=subprocess.DEVNULL, timeout=90)
+        if result.returncode:
+            raise ValueError('publisher_candidate_copy_sign_failed')
+        result = runner(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                         str(candidate)], capture_output=True,
+                        stdin=subprocess.DEVNULL, timeout=90)
+        if result.returncode or digest(launcher.read_bytes()) != PAYLOAD_SHA256:
+            raise ValueError('publisher_candidate_copy_verify_failed')
+        result = runner(['/usr/bin/ditto', str(original), str(restored)],
+                        capture_output=True, stdin=subprocess.DEVNULL, timeout=90)
+        if result.returncode or app_inventory(restored) != original_inventory:
+            raise ValueError('publisher_copy_rollback_changed')
+        result = runner(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                         str(restored)], capture_output=True,
+                        stdin=subprocess.DEVNULL, timeout=90)
+        if result.returncode or app_inventory(app) != original_inventory:
+            raise ValueError('publisher_copy_rollback_signature_invalid')
+    return True
+
+
+def prepare(home, archive, key_path, *, now=None, rehearsal=rehearse_on_copy):
     home = Path(home)
     now = int(time.time()) if now is None else now
     resources = (home / 'Downloads' / 'RapBrainManager_App_Beta14' /
@@ -172,6 +238,8 @@ def prepare(home, archive, key_path, *, now=None):
     if result.returncode:
         raise ValueError('publisher_active_app_signature_invalid')
     payload = check_archive(archive)
+    if rehearsal(app, payload, home / 'Downloads' / 'RapBrainManagerBackups') is not True:
+        raise ValueError('publisher_copy_rehearsal_failed')
     signed = {'schema': 'rapbrain-manager-production-v1',
         'sequence': 1, 'issued_at': now - 1, 'expires_at': now + 14 * 86400,
         'production_install_authorized': True, 'data_migrations': [],
