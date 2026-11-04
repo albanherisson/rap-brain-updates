@@ -111,6 +111,11 @@ ZIP using the existing private Manager key. It never exports the private seed
 or installs code. No production manifest exists yet; the key is only on the
 owner's Mac. The Finder app must not be offered as a working updater before
 the public ZIP is signed, verified and placed at the fixed channel.
+Before any live code replacement, the Finder installer now rehearses both a
+successful signed app change and an exact signature-preserving rollback on
+separate copies of the owner's app. Its only SQLite and Ollama configuration
+are synthetic. A failed rehearsal refuses the live transaction; pending
+recovery still uses its original saved signed release and no network request.
 
 ## Remaining implementation gates
 

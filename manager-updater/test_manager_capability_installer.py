@@ -8,6 +8,12 @@ from test_manager_capability_transaction import CapabilityTransactionTests
 
 
 class CapabilityInstallerTests(unittest.TestCase):
+    @staticmethod
+    def rehearsal(*_args, **_kwargs):
+        return {'state': 'passed', 'active_files_modified': False,
+                'live_database_opened': False,
+                'live_configuration_opened': False}
+
     def setUp(self):
         self.fixture = CapabilityTransactionTests('test_commit_and_idempotent_reopen')
         self.fixture.setUp()
@@ -21,7 +27,8 @@ class CapabilityInstallerTests(unittest.TestCase):
         result = install_from_channel(self.fixture.source, self.fixture.launcher,
             self.fixture.state, downloader=fetch,
             transaction_factory=lambda *_a, **_k: self.fixture.transaction(),
-            inspector=self.fixture.offline, pinned_key=self.fixture.signed_fixture.pin)
+            inspector=self.fixture.offline, pinned_key=self.fixture.signed_fixture.pin,
+            rehearsal=self.rehearsal)
         self.assertEqual(result['state'], 'committed')
         self.assertEqual(calls, [CHANNEL, ARCHIVE])
         self.fixture.assert_data()
@@ -37,7 +44,8 @@ class CapabilityInstallerTests(unittest.TestCase):
         result = install_from_channel(self.fixture.source, self.fixture.launcher,
             self.fixture.state, downloader=no_network,
             transaction_factory=lambda *_a, **_k: self.fixture.transaction(),
-            inspector=self.fixture.offline, pinned_key=self.fixture.signed_fixture.pin)
+            inspector=self.fixture.offline, pinned_key=self.fixture.signed_fixture.pin,
+            rehearsal=self.rehearsal)
         self.assertEqual(result['state'], 'rolled_back')
 
     def test_tamper_refused_before_state_journal(self):
@@ -48,7 +56,8 @@ class CapabilityInstallerTests(unittest.TestCase):
                                                else self.fixture.archive + b'!'),
                 transaction_factory=lambda *_a, **_k: self.fixture.transaction(),
                 inspector=self.fixture.offline,
-                pinned_key=self.fixture.signed_fixture.pin)
+                pinned_key=self.fixture.signed_fixture.pin,
+                rehearsal=self.rehearsal)
         self.assertFalse((self.fixture.state / 'manager-capability.json').exists())
 
 

@@ -12,6 +12,7 @@ from creative_transaction import safe_path
 from mac_offline_bootstrap_gate import assert_offline
 from manager_capability_release import (ARCHIVE, CHANNEL, MAX_ARCHIVE,
                                         verify_release)
+from manager_capability_rehearsal import rehearse_on_copy
 from manager_capability_transaction import OfflineManagerCapability
 
 
@@ -36,7 +37,8 @@ def fetch(url, limit):
 
 def install_from_channel(source, launcher, state, *, downloader=fetch,
                          transaction_factory=OfflineManagerCapability,
-                         inspector=None, pinned_key=None):
+                         inspector=None, pinned_key=None,
+                         rehearsal=rehearse_on_copy):
     source = safe_path(source, directory=True)
     launcher = safe_path(launcher)
     options = {'inspector': inspector} if inspector else {}
@@ -53,6 +55,12 @@ def install_from_channel(source, launcher, state, *, downloader=fetch,
     archive = downloader(ARCHIVE, MAX_ARCHIVE)
     verify_args = {'pinned_key': pinned_key} if pinned_key is not None else {}
     verify_release(raw, archive, **verify_args)
+    trial = rehearsal(source, launcher, state, raw, archive, **verify_args)
+    if (type(trial) is not dict or trial.get('state') != 'passed' or
+            trial.get('active_files_modified') is not False or
+            trial.get('live_database_opened') is not False or
+            trial.get('live_configuration_opened') is not False):
+        raise Refused('manager_capability_rehearsal_not_proven')
     return transaction.install(raw, archive)
 
 
