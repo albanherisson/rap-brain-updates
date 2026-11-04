@@ -151,7 +151,9 @@ def sign_with_key(path, message, folder):
     if not key_file(path):
         return None
     raw = path.read_bytes()
-    if raw.startswith(b'{'):
+    # A valid 32-byte Ed25519 seed may happen to start with '{'. Never try
+    # to reinterpret such binary key material as JSON.
+    if len(raw) != 32 and raw.startswith(b'{'):
         try:
             record = json.loads(raw)
             value = next((record[name] for name in

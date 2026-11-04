@@ -19,6 +19,17 @@ from creative_release import verify_archive, verify_manifest
 
 
 class PublisherPreparationTests(unittest.TestCase):
+    def test_binary_seed_starting_with_brace_is_not_parsed_as_json(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary).resolve()
+            key = folder / 'publisher.key'
+            key.write_bytes(b'{' + b'\0' * 31)
+            key.chmod(0o600)
+            signed = legacy.sign_with_key(key, b'disposable', folder)
+            self.assertIsNotNone(signed)
+            self.assertEqual(len(signed[0]), 32)
+            self.assertEqual(len(signed[1]), 64)
+
     def test_creative_private_key_is_distinct_backed_up_and_not_in_public_zip(self):
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary).resolve()
