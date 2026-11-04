@@ -17,6 +17,7 @@ from manager_offline_lifecycle import MacOfflineManagerLifecycle
 from manager_update_transaction import ManagerUpdateTransaction
 from manager_capability_transaction import OfflineManagerCapability
 from manager_capability_rehearsal import rehearse_on_copy as rehearse_capability
+from build_manager_version_update import build as build_version_update
 import test_bootstrap_full_transaction as full_fixture
 import test_manager_capability_transaction as capability_fixture
 import test_manager_update_transaction as manager_fixture
@@ -24,6 +25,50 @@ import test_manager_update_transaction as manager_fixture
 
 @unittest.skipUnless(sys.platform == 'darwin', 'requires macOS codesign')
 class MacAppSignatureIntegrationTests(unittest.TestCase):
+    def test_version_label_update_signs_and_restores_current_capability_copy(self):
+        import io
+        from zipfile import ZipFile
+        published = Path(__file__).resolve().parent.parent / 'manager-capability' / 'capability-1.zip'
+        with ZipFile(published) as zipped:
+            baseline = zipped.read('app/launch_manager.py')
+        with ZipFile(io.BytesIO(build_version_update(published))) as zipped:
+            candidate = zipped.read('app/launch_manager.py')
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as temporary:
+            root = Path(temporary)
+            source = root / 'rap-brain'
+            source.mkdir()
+            (source / 'server.py').write_bytes(b'# synthetic server\n')
+            app = root / 'Manager.app'
+            resources = app / 'Contents' / 'Resources'
+            resources.mkdir(parents=True)
+            native = app / 'Contents' / 'MacOS' / 'RapBrainManagerLegacy'
+            native.parent.mkdir()
+            native.write_bytes(Path('/bin/echo').read_bytes())
+            native.chmod(0o755)
+            (app / 'Contents' / 'Info.plist').write_bytes(plistlib.dumps({
+                'CFBundleIdentifier': 'org.rapbrain.disposable-version-label',
+                'CFBundleExecutable': native.name, 'CFBundleName': 'Disposable Manager',
+                'CFBundlePackageType': 'APPL', 'CFBundleVersion': '1'}))
+            launcher = resources / 'launch_manager.py'
+            launcher.write_bytes(baseline)
+            subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
+                            str(app)], check=True, capture_output=True)
+            folder = root / 'backup'
+            folder.mkdir(mode=0o700)
+            original = save_app_backup(app, folder)
+            launcher.write_bytes(candidate)
+            offline = lambda *_: {'server_process_seen': False,
+                                  'manager_process_seen': False,
+                                  'port_8765_listening': False}
+            self.assertTrue(resign_verified_app(app, folder, source, launcher,
+                                                inspector=offline))
+            subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                            str(app)], check=True, capture_output=True)
+            self.assertTrue(restore_app_backup(app, folder))
+            self.assertTrue(verify_restored_app(app, folder, source, launcher,
+                                               inspector=offline))
+            self.assertEqual(inventory(app), original)
+
     def test_one_time_capability_rehearses_on_owner_shape_copy(self):
         fixture = capability_fixture.CapabilityTransactionTests('test_commit_and_idempotent_reopen')
         fixture.setUp()
