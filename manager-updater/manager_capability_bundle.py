@@ -11,21 +11,12 @@ import zipfile
 from bootstrap_runtime_resources import RUNTIME_FILES
 from build_first_bootstrap_app import dependencies
 from creative_release import Refused, digest
+from manager_capability_inventory import APP_CODE_FILES, APP_SUPPORT_FILES
 from manager_helper_bundle import assemble as assemble_helper
 from manager_update_ui_candidate import prepare_launcher, prepare_dashboard
 
 
 ROOT = Path(__file__).resolve().parent
-APP_SUPPORT_FILES = (
-    'beta14_launch_gate.py', 'beta14_owned_identity_candidate.py',
-    'beta14_runtime_token_candidate.py', 'bootstrap_release.py',
-    'manager_helper_inventory.py', 'manager_helper_release.py',
-    'recovery_start_guards.py', 'server_graceful_shutdown_candidate.py',
-    'server_lifetime_guard.py', 'server_worker_resume_candidate.py',
-)
-APP_CODE_FILES = ('launch_manager.py', 'dashboard_beta14.html') + APP_SUPPORT_FILES
-
-
 def assemble(launcher, dashboard, *, root=ROOT):
     """Return deterministic candidate bytes and exact hashes; never install."""
     root = Path(root).absolute()

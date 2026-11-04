@@ -15,12 +15,60 @@ from offline_bootstrap_lifecycle import MacOfflineBootstrapLifecycle
 from bootstrap_runtime_resources import RUNTIME_FILES
 from manager_offline_lifecycle import MacOfflineManagerLifecycle
 from manager_update_transaction import ManagerUpdateTransaction
+from manager_capability_transaction import OfflineManagerCapability
 import test_bootstrap_full_transaction as full_fixture
+import test_manager_capability_transaction as capability_fixture
 import test_manager_update_transaction as manager_fixture
 
 
 @unittest.skipUnless(sys.platform == 'darwin', 'requires macOS codesign')
 class MacAppSignatureIntegrationTests(unittest.TestCase):
+    def test_one_time_capability_signs_disposable_app(self):
+        fixture = capability_fixture.CapabilityTransactionTests('test_commit_and_idempotent_reopen')
+        fixture.setUp()
+        try:
+            native = fixture.app / 'Contents' / 'MacOS' / 'RapBrainManagerLegacy'
+            native.write_bytes(Path('/bin/echo').read_bytes())
+            native.chmod(0o755)
+            subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
+                            str(fixture.app)], check=True, capture_output=True)
+            result = OfflineManagerCapability(
+                fixture.source, fixture.launcher, fixture.state,
+                inspector=fixture.offline,
+                pinned_key=fixture.signed_fixture.pin).install(fixture.raw,
+                                                               fixture.archive)
+            self.assertEqual(result['state'], 'committed')
+            subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                            str(fixture.app)], check=True, capture_output=True)
+            fixture.assert_data()
+        finally:
+            fixture.doCleanups()
+
+    def test_one_time_capability_signed_copy_and_exact_rollback(self):
+        fixture = capability_fixture.CapabilityTransactionTests('test_commit_and_idempotent_reopen')
+        fixture.setUp()
+        try:
+            native = fixture.app / 'Contents' / 'MacOS' / 'RapBrainManagerLegacy'
+            native.write_bytes(Path('/bin/echo').read_bytes())
+            native.chmod(0o755)
+            subprocess.run(['/usr/bin/codesign', '--force', '--deep', '--sign', '-',
+                            str(fixture.app)], check=True, capture_output=True)
+            original = inventory(fixture.app)
+            transaction = OfflineManagerCapability(
+                fixture.source, fixture.launcher, fixture.state,
+                inspector=fixture.offline, pinned_key=fixture.signed_fixture.pin,
+                signer=lambda *_a, **_k: False)
+            result = transaction.install(fixture.raw, fixture.archive)
+            self.assertEqual(result['state'], 'rolled_back')
+            self.assertEqual(inventory(fixture.app), original)
+            subprocess.run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                            str(fixture.app)], check=True, capture_output=True)
+            fixture.assert_data()
+            self.assertFalse((fixture.state / 'helper').exists())
+            self.assertFalse((fixture.state / 'maintenance.ticket').exists())
+        finally:
+            fixture.doCleanups()
+
     def test_general_manager_failed_health_restores_signed_bundle(self):
         fixture = manager_fixture.ManagerTransactionTests(
             'test_failed_health_restores_exact_code')

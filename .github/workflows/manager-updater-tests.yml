@@ -64,6 +64,15 @@ jobs:
           mkdir "$RUNNER_TEMP/creative-installer-verify"
           /usr/bin/ditto -x -k "$RUNNER_TEMP/Installer_Creative_Rap_Brain.zip" "$RUNNER_TEMP/creative-installer-verify"
           /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/creative-installer-verify/Installer Creative Rap Brain.app"
+      - name: Build and verify disposable Manager capability Finder installer
+        run: |
+          python -B manager-updater/build_manager_capability_app.py "$RUNNER_TEMP/Activer les mises à jour Rap Brain.app"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/Activer les mises à jour Rap Brain.app"
+          /bin/sh "$RUNNER_TEMP/Activer les mises à jour Rap Brain.app/Contents/Resources/updater/python_bootstrap_selector.sh" "$RUNNER_TEMP/Activer les mises à jour Rap Brain.app/Contents/Resources/updater/manager_capability_installer.py" --help >/dev/null
+          /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$RUNNER_TEMP/Activer les mises à jour Rap Brain.app" "$RUNNER_TEMP/Manager_Capability_Copy_Test.zip"
+          mkdir "$RUNNER_TEMP/capability-installer-verify"
+          /usr/bin/ditto -x -k "$RUNNER_TEMP/Manager_Capability_Copy_Test.zip" "$RUNNER_TEMP/capability-installer-verify"
+          /usr/bin/codesign --verify --deep --strict "$RUNNER_TEMP/capability-installer-verify/Activer les mises à jour Rap Brain.app"
       - uses: actions/upload-artifact@v4
         with:
           name: rapbrain-finder-installer-macos

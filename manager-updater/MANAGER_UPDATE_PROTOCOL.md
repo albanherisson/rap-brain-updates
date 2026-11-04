@@ -88,7 +88,22 @@ candidate archive from the pinned post-Creative Beta 14 launcher/dashboard,
 the external helper archive, and exactly ten additional app verifier modules.
 It rejects a changed baseline and contains no database, Ollama configuration,
 library or private key. The owner Beta 14 ZIP smoke passes locally. This is
-packaging input only: there is no signed capability manifest or installer yet.
+packaging input only: no production capability manifest is signed or published.
+
+The one-time capability now has a strict, read-only verifier
+(`manager_capability_release.py`), an offline transaction
+(`manager_capability_transaction.py`), and a Finder builder/entrypoint. The
+verifier requires two Manager-key signatures, exact code-only members, fresh
+authorization, the pinned post-Creative launcher/dashboard and guarded server.
+The transaction saves and drills a complete app backup plus SQLite/Ollama
+configuration before staging the private helper or replacing code. It signs
+the app locally, verifies the signed candidate, restores the exact original
+app on failure, and resumes an interrupted attempt from its saved signed
+release without network access. Disposable synthetic commit, failure and
+interruption tests pass. The Finder builder and real macOS codesign tests
+are queued for CI. No production manifest exists, and this candidate must
+not be delivered to the owner until that macOS gate and a signed publication
+pass; the private Manager publishing key is only on the owner's Mac.
 
 ## Remaining implementation gates
 
