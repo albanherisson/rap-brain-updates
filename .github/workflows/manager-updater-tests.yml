@@ -77,6 +77,10 @@ jobs:
         run: |
           curl -fsSL 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/19d84a4db0713a658265df3358a68c1adc6388be/manager-capability/capability-1.zip' -o "$RUNNER_TEMP/capability-1.zip"
           echo "963ca5733de48d7d336b1c214a0b8f308aa582aa3484a5ae51769daafe0cf8a7  $RUNNER_TEMP/capability-1.zip" | shasum -a 256 -c
+      - name: Check pinned general update candidate for Mac publisher
+        run: |
+          curl -fsSL 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/5a884fd1540939472caf115116197561350bf322/manager-stable/update-1.zip' -o "$RUNNER_TEMP/update-1.zip"
+          echo "eee67d2a0902fc308dadefa33cdc3deea294ce2862e0ee61b09856d1868b9cf1  $RUNNER_TEMP/update-1.zip" | shasum -a 256 -c
       - uses: actions/upload-artifact@v4
         with:
           name: rapbrain-finder-installer-macos
