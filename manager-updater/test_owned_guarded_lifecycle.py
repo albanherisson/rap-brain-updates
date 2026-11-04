@@ -16,7 +16,8 @@ import zipfile
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from creative_release import canonical, digest
+from authenticated_runtime_client import read_runtime_proof
+from creative_release import Refused, canonical, digest
 from creative_transaction import Transaction
 from owned_guarded_lifecycle import OwnedGuardedLifecycle
 from recovery_start_guards import prepare_server
@@ -85,6 +86,23 @@ class OwnedLifecycleTests(unittest.TestCase):
                     os.environ['HOME'] = str(home)
                     original, observed_port = started_child(source, home)
                     self.assertEqual(observed_port, port)
+                    # PORT is printed by the HTTP thread while the worker is
+                    # started by another thread. Wait for the fixture's proof
+                    # instead of racing its first process snapshot.
+                    with patch('authenticated_runtime_client.assert_owned_listener',
+                               return_value=True):
+                        deadline = time.monotonic() + 3
+                        while True:
+                            try:
+                                read_runtime_proof(port, TOKEN,
+                                                   expected_parent_pid=original.pid)
+                                break
+                            except Refused as exc:
+                                if (str(exc) not in ('runtime_process_identity_mismatch',
+                                                    'runtime_proof_unavailable') or
+                                        time.monotonic() >= deadline):
+                                    raise
+                                time.sleep(0.05)
                     start = f'{original.pid}:fixture-start'
                     supervisor = {'process': original, 'runtime_token': TOKEN,
                                   'server_sha256': digest(server),
