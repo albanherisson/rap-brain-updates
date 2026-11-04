@@ -54,14 +54,15 @@ def recover_existing(source, launcher, state, *, offline=assert_offline,
         record = transaction._journal_record()
         if record['id'] != identifier:
             raise Refused('manager_recovery_attempt_changed')
-        if record['phase'] in TERMINAL:
-            raise Refused('manager_terminal_cleanup_requires_review')
         folder = safe_path(state / identifier, directory=True)
         saved = folder / 'manager-release.json'
         if (os.path.lexists(saved) and
                 safe_path(saved).read_bytes() != signed):
             raise Refused('manager_recovery_release_changed')
-        result = transaction.recover()
+        if record['phase'] in TERMINAL:
+            result = transaction.finalize_terminal_handoff(signed, identifier)
+        else:
+            result = transaction.recover()
     else:
         result = transaction.abort_handoff_before_journal(signed, identifier)
     report_result(state, identifier, result)
@@ -82,7 +83,7 @@ def main(argv=None):
     state = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
     result = recover_existing(source, launcher, state)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-    return 0 if result.get('state') in ('aborted', 'rolled_back') else 2
+    return 0 if result.get('state') in ('committed', 'aborted', 'rolled_back') else 2
 
 
 if __name__ == '__main__':

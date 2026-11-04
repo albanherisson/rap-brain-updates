@@ -356,6 +356,62 @@ class ManagerUpdateTransaction(BootstrapTransaction):
                 self.record(record, 'aborted')
                 return {'state': 'aborted', 'installation_performed': False,
                         'database_replaced': False}
+
+    def finalize_terminal_handoff(self, signed_manifest, identifier):
+        """Verify terminal code/signature and finish the original private ticket.
+
+        A committed journal was written only after authenticated candidate
+        health. This path never starts a new release, restores a database or
+        creates another ticket. An unhealthy or unknown terminal state stays
+        blocked for review.
+        """
+        with self.locked():
+            record = self._journal_record()
+            if (record['id'] != identifier or record['phase'] not in
+                    ('committed', 'rolled_back', 'aborted')):
+                raise Refused('manager_terminal_attempt_not_verified')
+            issued = parse_signed_json(signed_manifest)['signed_payload']['issued_at']
+            manifest = verify_manifest(signed_manifest, pinned_key=self.pin,
+                                       now=issued)
+            if (record['sequence'] != manifest['sequence'] or
+                    record['server_baseline'] != manifest['required_server_sha256'] or
+                    record['baselines'] != {entry['path']: entry['baseline_sha256']
+                                           for entry in manifest['files']}):
+                raise Refused('manager_terminal_release_changed')
+            folder = safe_path(self.state / identifier, directory=True)
+            if record['phase'] in ('committed', 'rolled_back'):
+                if safe_path(folder / 'manager-release.json').read_bytes() != signed_manifest:
+                    raise Refused('manager_terminal_saved_release_changed')
+                saved, _ = self._saved(folder)
+                if saved != manifest:
+                    raise Refused('manager_terminal_saved_attempt_changed')
+            else:
+                verify_baseline(manifest, self.source, self.resources)
+            resume = getattr(self.lifecycle, 'resume_maintenance', None)
+            if not callable(resume):
+                raise Refused('manager_terminal_lifecycle_required')
+            with resume(self.source, self.launcher, identifier) as lease:
+                if lease.transaction_id != identifier:
+                    raise Refused('manager_terminal_attempt_changed')
+                self._assert_excluded(lease)
+                expected = 'candidate' if record['phase'] == 'committed' else 'baseline'
+                code_state = getattr(lease, '_code_state', None)
+                sign = getattr(lease, '_sign', None)
+                if (not callable(code_state) or not callable(sign) or
+                        code_state() != expected):
+                    raise Refused('manager_terminal_code_changed')
+                sign()  # Checks complete app inventory and local macOS signature.
+                if record['phase'] == 'committed':
+                    minimum = (self._read_receipt()['sequence']
+                               if os.path.lexists(self.receipt) else 0)
+                    atomic_write(self.receipt, json.dumps({
+                        'sequence': max(minimum, record['sequence'])}).encode())
+            if (os.path.lexists(self.state / 'maintenance.ticket') or
+                    os.path.lexists(self.state / 'bootstrap-intent.json')):
+                raise Refused('manager_terminal_ticket_not_cleared')
+            return {'state': record['phase'],
+                    'installation_performed': record['phase'] == 'committed',
+                    'database_replaced': False, 'backup_id': identifier}
     def _read_receipt(self):
         path = safe_path(self.receipt)
         if (path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077 or

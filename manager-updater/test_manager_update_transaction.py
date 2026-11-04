@@ -300,6 +300,94 @@ class ManagerTransactionTests(unittest.TestCase):
         self.assert_code(self.before)
         self.assert_data()
 
+    def test_terminal_commit_recovers_receipt_and_clears_original_ticket(self):
+        (self.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
+        for name in RUNTIME_FILES:
+            (self.resources / name).write_bytes(b'original signed resource')
+        self.assertEqual(self.tx([True]).install(self.signed, self.archive)['state'],
+                         'committed')
+        (self.state / 'manager-accepted.json').unlink()
+        ticket = OfflineFixture.ticket
+        (self.state / 'bootstrap-intent.json').write_text(json.dumps({
+            'id': IDENTIFIER, 'source': str(self.source),
+            'launcher': str(self.launcher),
+            'ticket_sha256': hashlib.sha256(ticket).hexdigest()}))
+        (self.state / 'bootstrap-intent.json').chmod(0o600)
+        (self.state / 'maintenance.ticket').write_bytes(ticket)
+        (self.state / 'maintenance.ticket').chmod(0o600)
+        inspector = lambda *_: {'server_process_seen': False,
+            'manager_process_seen': False, 'port_8765_listening': False}
+        lifecycle = MacOfflineManagerLifecycle(self.source, self.launcher,
+            self.state, self.signed, pinned_key=self.pin,
+            issued_recovery=True, inspector=inspector,
+            signer=lambda *_a, **_k: True)
+        transaction = ManagerUpdateTransaction(self.source, self.launcher,
+            self.state, lifecycle, pinned_key=self.pin)
+        result = transaction.finalize_terminal_handoff(self.signed, IDENTIFIER)
+        self.assertEqual(result['state'], 'committed')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assertEqual(json.loads((self.state / 'manager-accepted.json')
+                                    .read_text()), {'sequence': 1})
+        self.assert_code(self.after)
+        self.assert_data()
+
+    def test_terminal_commit_refuses_unselected_app_change(self):
+        (self.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
+        for name in RUNTIME_FILES:
+            (self.resources / name).write_bytes(b'original signed resource')
+        self.tx([True]).install(self.signed, self.archive)
+        (self.resources / 'dashboard_beta14.html').write_bytes(b'unknown change')
+        ticket = OfflineFixture.ticket
+        intent = {'id': IDENTIFIER, 'source': str(self.source),
+            'launcher': str(self.launcher),
+            'ticket_sha256': hashlib.sha256(ticket).hexdigest()}
+        (self.state / 'bootstrap-intent.json').write_text(json.dumps(intent))
+        (self.state / 'bootstrap-intent.json').chmod(0o600)
+        (self.state / 'maintenance.ticket').write_bytes(ticket)
+        (self.state / 'maintenance.ticket').chmod(0o600)
+        inspector = lambda *_: {'server_process_seen': False,
+            'manager_process_seen': False, 'port_8765_listening': False}
+        lifecycle = MacOfflineManagerLifecycle(self.source, self.launcher,
+            self.state, self.signed, pinned_key=self.pin,
+            issued_recovery=True, inspector=inspector,
+            signer=lambda *_a, **_k: True)
+        transaction = ManagerUpdateTransaction(self.source, self.launcher,
+            self.state, lifecycle, pinned_key=self.pin)
+        with self.assertRaises(Refused):
+            transaction.finalize_terminal_handoff(self.signed, IDENTIFIER)
+        self.assertTrue((self.state / 'maintenance.ticket').is_file())
+        self.assertEqual((self.resources / 'dashboard_beta14.html').read_bytes(),
+                         b'unknown change')
+        self.assert_data()
+
+    def test_terminal_rollback_clears_ticket_without_changing_data(self):
+        (self.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
+        for name in RUNTIME_FILES:
+            (self.resources / name).write_bytes(b'original signed resource')
+        self.assertEqual(self.tx([False, True]).install(self.signed, self.archive)
+                         ['state'], 'rolled_back')
+        ticket = OfflineFixture.ticket
+        (self.state / 'bootstrap-intent.json').write_text(json.dumps({
+            'id': IDENTIFIER, 'source': str(self.source),
+            'launcher': str(self.launcher),
+            'ticket_sha256': hashlib.sha256(ticket).hexdigest()}))
+        (self.state / 'bootstrap-intent.json').chmod(0o600)
+        (self.state / 'maintenance.ticket').write_bytes(ticket)
+        (self.state / 'maintenance.ticket').chmod(0o600)
+        inspector = lambda *_: {'server_process_seen': False,
+            'manager_process_seen': False, 'port_8765_listening': False}
+        lifecycle = MacOfflineManagerLifecycle(self.source, self.launcher,
+            self.state, self.signed, pinned_key=self.pin,
+            issued_recovery=True, inspector=inspector,
+            restored_verifier=lambda *_a, **_k: True)
+        transaction = ManagerUpdateTransaction(self.source, self.launcher,
+            self.state, lifecycle, pinned_key=self.pin)
+        result = transaction.finalize_terminal_handoff(self.signed, IDENTIFIER)
+        self.assertEqual(result['state'], 'rolled_back')
+        self.assertFalse((self.state / 'maintenance.ticket').exists())
+        self.assert_code(self.before)
+        self.assert_data()
+
     def test_offline_lifecycle_restores_old_app_after_failed_health(self):
         (self.resources / 'dashboard_beta14.html').write_bytes(b'original dashboard')
         for name in RUNTIME_FILES:

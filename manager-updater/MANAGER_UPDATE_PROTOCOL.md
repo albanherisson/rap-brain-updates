@@ -56,12 +56,15 @@ The helper now records a small private terminal result after the HTTP parent
 exits; a pending maintenance ticket is displayed as requiring a check instead
 of reporting a false success. A crash before the report still needs a
 dedicated recovery entrypoint and macOS process tests.
-`manager_update_recovery.py` is a separate offline entrypoint for an existing
-nonterminal attempt. It reads the original private intent and signed stage,
-checks the attempt identity and any saved release, and either aborts unchanged
-pre-journal code or resumes the original journal. Its tests use synthetic
-SQLite/configuration. Terminal-journal cleanup, capability packaging and
-macOS process validation are still missing; it is not installed.
+`manager_update_recovery.py` is a separate offline entrypoint for the existing
+attempt. It reads the original private intent and signed stage, checks the
+attempt identity and any saved release, and either aborts unchanged
+pre-journal code, resumes a nonterminal journal, or verifies terminal code,
+application inventory and signature before clearing its original ticket.
+The committed receipt is reconstructed if the crash preceded its write.
+Tests cover committed, rolled-back and tampered terminal states with synthetic
+SQLite/configuration. Capability packaging and macOS process validation are
+still missing; this path is not installed.
 The unchanged-code abort now creates its private attempt directory before the
 macOS lifecycle verifies the application signature. A disposable lifecycle
 test covers the ticket cleanup and confirms synthetic data is unchanged.
@@ -77,7 +80,8 @@ test covers the ticket cleanup and confirms synthetic data is unchanged.
    its imports outside the app being replaced; exit the parent after handing
    off the lifetime lock. Provide a safe recovery entrypoint for failed stop,
    timeout and interrupted phases, without pulling a fresh release or
-   silently starting a second attempt. Exercise actual process ownership and
+   silently starting a second attempt. The terminal path also needs genuine
+   macOS codesign and process tests. Exercise actual process ownership and
    exclusion on disposable macOS copies.
 3. Rehearse success, failed health, interrupted phases and exact rollback on
    disposable macOS copies, including the app's extended attributes and a
