@@ -8,10 +8,18 @@ import unittest
 import zipfile
 
 from creative_release import Refused, digest
+from build_first_bootstrap_app import dependencies
 from manager_helper_bundle import ROOT, HELPER_FILES, assemble
 
 
 class HelperBundleTests(unittest.TestCase):
+    def test_app_verifier_does_not_import_builder_or_source_packager(self):
+        names = {path.name for path in dependencies(entry='manager_helper_release')}
+        self.assertIn('manager_helper_release.py', names)
+        self.assertIn('manager_helper_inventory.py', names)
+        self.assertNotIn('manager_helper_bundle.py', names)
+        self.assertNotIn('build_first_bootstrap_app.py', names)
+
     def test_deterministic_complete_candidate_has_no_private_key(self):
         first, hashes = assemble()
         second, again = assemble()

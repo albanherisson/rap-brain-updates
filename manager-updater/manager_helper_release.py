@@ -19,7 +19,7 @@ from bootstrap_release import PUBLISHER_PIN
 from creative_release import Refused, canonical, digest
 from creative_transaction import fsync_dir
 from ed25519_runtime import verify_signature
-from manager_helper_bundle import HELPER_FILES
+from manager_helper_inventory import HELPER_FILES
 from strict_json import parse_signed_json
 from worker_activity_gate import _state
 
