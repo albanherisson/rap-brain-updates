@@ -69,6 +69,15 @@ The unchanged-code abort now creates its private attempt directory before the
 macOS lifecycle verifies the application signature. A disposable lifecycle
 test covers the ticket cleanup and confirms synthetic data is unchanged.
 
+`manager_helper_bundle.py` now assembles the exact 41-file external helper
+candidate deterministically (40 Python modules and the existing CryptoKit
+verifier). `manager_helper_release.py` authenticates a separate Manager-key
+signed manifest and exact archive before creating a private helper directory;
+extra members, changed bytes and stale signatures are rejected on copies.
+No production helper manifest is signed or published. Staging this helper
+does not install or authorize the Manager UI; a signed one-time capability
+installer still has to deliver both the helper and reviewed app changes.
+
 ## Remaining implementation gates
 
 1. Review the transaction and exercise signing, authenticated HTTP health,
