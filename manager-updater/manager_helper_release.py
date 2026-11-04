@@ -182,7 +182,15 @@ def verify_staged(state, *, pinned_key=PUBLISHER_PIN, now=None):
         raise Refused('manager_helper_staged_manifest')
     if path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
         raise Refused('manager_helper_manifest_unsafe')
-    manifest = verify_manifest(path.read_bytes(), pinned_key=pinned_key, now=now)
+    raw = path.read_bytes()
+    # The expiry limits new staging, not the lifetime of already installed
+    # helper code. Recheck its signature and signed hashes at issuance time.
+    try:
+        issued = parse_signed_json(raw)['signed_payload']['issued_at']
+    except (KeyError, TypeError, ValueError) as exc:
+        raise Refused('manager_helper_staged_manifest') from exc
+    manifest = verify_manifest(raw, pinned_key=pinned_key,
+                               now=issued if now is None else now)
     for name in HELPER_FILES:
         path = folder / name
         if path.is_symlink() or not path.is_file() or path.stat().st_size > 250_000:

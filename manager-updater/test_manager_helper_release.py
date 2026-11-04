@@ -87,6 +87,11 @@ class HelperReleaseTests(unittest.TestCase):
             self.assertEqual(digest((helper / 'manager_update_helper.py').read_bytes()),
                              self.payload['files']['manager_update_helper.py'])
             self.assertEqual(verify_staged(state, pinned_key=self.pin), helper)
+            self.assertEqual(verify_staged(state, pinned_key=self.pin,
+                                           now=self.payload['issued_at']), helper)
+            with self.assertRaises(Refused):
+                verify_staged(state, pinned_key=self.pin,
+                              now=self.payload['expires_at'])
             changed = helper / 'manager_update_parent.py'
             original = changed.read_bytes()
             changed.write_bytes(original + b'\n# changed\n')

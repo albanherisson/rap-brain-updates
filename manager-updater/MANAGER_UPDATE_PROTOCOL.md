@@ -77,7 +77,8 @@ signed manifest and exact archive before creating a private helper directory;
 extra members, changed bytes and stale signatures are rejected on copies.
 The private staged helper retains the signed manifest; the candidate Manager
 verifies every helper file again before importing the parent module. A changed
-file or expired helper manifest blocks the action. The signed capability
+file blocks the action. Expiry limits first staging; an already installed
+helper remains authenticated against the original signed hashes. The signed capability
 installer must include the verifier and its imports in the app bundle.
 No production helper manifest is signed or published. Staging this helper
 does not install or authorize the Manager UI; a signed one-time capability
