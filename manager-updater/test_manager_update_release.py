@@ -77,6 +77,7 @@ class ManagerReleaseTest(unittest.TestCase):
             'baseline_sha256': digest(b'old launcher'),
             'payload_sha256': digest(self.payload)}]
         with tempfile.TemporaryDirectory() as root:
+            root = Path(root).resolve()
             source = Path(root) / 'rap-brain'
             resources = Path(root) / 'resources'
             source.mkdir(); resources.mkdir()
@@ -142,6 +143,7 @@ class ManagerReleaseTest(unittest.TestCase):
 
     def test_baseline_reads_only_selected_code(self):
         with tempfile.TemporaryDirectory() as root:
+            root = Path(root).resolve()
             source = Path(root) / 'rap-brain'
             resources = Path(root) / 'resources'
             source.mkdir()
@@ -158,7 +160,7 @@ class ManagerReleaseTest(unittest.TestCase):
 
     def test_code_swap_and_exact_rollback_on_copy(self):
         with tempfile.TemporaryDirectory() as root:
-            root = Path(root)
+            root = Path(root).resolve()
             source = root / 'rap-brain'
             resources = root / 'Manager.app' / 'Contents' / 'Resources'
             state = root / 'backups'
