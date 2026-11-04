@@ -101,27 +101,28 @@ the app locally, verifies the signed candidate, restores the exact original
 app on failure, and resumes an interrupted attempt from its saved signed
 release without network access. Disposable synthetic commit, failure and
 interruption tests pass. The Finder builder and real macOS codesign tests
-are queued for CI. No production manifest exists, and this candidate must
-not be delivered to the owner until that macOS gate and a signed publication
-pass; the private Manager publishing key is only on the owner's Mac.
+passed in CI, including signature-preserving rollback on a disposable app.
+The reviewed 116,565-byte candidate is pinned on the draft branch at
+`19d84a4db0713a658265df3358a68c1adc6388be`, SHA-256
+`963ca5733de48d7d336b1c214a0b8f308aa582aa3484a5ae51769daafe0cf8a7`.
+`mac_sign_manager_capability.py` checks the owner's launcher/dashboard/server
+and app signature, then prepares both Manager-signed manifests and one public
+ZIP using the existing private Manager key. It never exports the private seed
+or installs code. No production manifest exists yet; the key is only on the
+owner's Mac. The Finder app must not be offered as a working updater before
+the public ZIP is signed, verified and placed at the fixed channel.
 
 ## Remaining implementation gates
 
-1. Review the transaction and exercise signing, authenticated HTTP health,
-   interruption and rollback with the real macOS app on disposable copies.
-   Keep the live database and configuration outside the signed archive and
-   never restore over them automatically.
-2. Deliver the reviewed helper, the verifier and UI through one signed
-   capability installer. The terminal recovery path still needs genuine
-   macOS codesign and process tests. Exercise actual process ownership and
-   exclusion on disposable macOS copies.
-3. Rehearse success, failed health, interrupted phases and exact rollback on
-   disposable macOS copies, including the app's extended attributes and a
-   synthetic SQLite/config. Reject a busy or unowned server. Verify signed
-   channel bytes, publisher key and release expiry independently.
-4. Publish a production release only after the copy rehearsals and sign it
-   with the existing Manager key on the owner's Mac. Then enable the generic
-   button through a signed app update and validate it once on the owner's Mac.
+1. On the owner's Mac, verify the pinned candidate and unchanged installed
+   baseline, then use the existing Manager key to sign the **public** package.
+   No private key or original library may be uploaded.
+2. Verify the received public ZIP and publish only its two exact signed files
+   to the fixed GitHub channel. Run the Finder capability installer once,
+   with Rap Brain and the Manager closed, and check its committed receipt.
+3. Open the Manager and exercise a published general update on a disposable
+   copy before making any general release available for the owner's active
+   app. Check HTTP health, interrupted phases and exact rollback there.
 
 The release verifier alone does not authorize any write to the installed app.
 The Creative-specific button remains the only production one-click path today.

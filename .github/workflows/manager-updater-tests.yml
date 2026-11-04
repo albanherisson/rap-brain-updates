@@ -85,6 +85,12 @@ jobs:
           path: ${{ runner.temp }}/Installer_Creative_Rap_Brain.zip
           retention-days: 7
           compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rapbrain-manager-capability-installer-macos
+          path: ${{ runner.temp }}/Manager_Capability_Copy_Test.zip
+          retention-days: 7
+          compression-level: 0
   mac-cryptokit:
     name: macOS CryptoKit identity test
     runs-on: macos-latest
