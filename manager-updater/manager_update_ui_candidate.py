@@ -23,6 +23,10 @@ PARENT_HANDLER = '''def handle_manager_update_request(root, rap_dir, backup_dir,
         req.unlink()
         if data!={'action':'install-signed-manager'}:raise RuntimeError('invalid_manager_request')
         secure_state=backup_dir/'secure-update'
+        from manager_helper_release import verify_staged
+        import sys
+        helper_dir=verify_staged(secure_state)
+        sys.path.insert(0,str(helper_dir))
         from manager_update_parent import prepare_handoff
         handoff=prepare_handoff(rap_dir,Path(__file__).resolve(),secure_state,
             state,secure_state/'helper'/'manager_update_helper.py')

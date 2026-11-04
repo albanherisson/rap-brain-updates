@@ -12,7 +12,8 @@ from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 from creative_release import Refused, canonical, digest
 from manager_helper_bundle import assemble
-from manager_helper_release import stage_verified, verify_archive, verify_manifest
+from manager_helper_release import (stage_verified, verify_archive,
+                                    verify_manifest, verify_staged)
 
 
 class HelperReleaseTests(unittest.TestCase):
@@ -85,6 +86,13 @@ class HelperReleaseTests(unittest.TestCase):
                              & 0o777, 0o600)
             self.assertEqual(digest((helper / 'manager_update_helper.py').read_bytes()),
                              self.payload['files']['manager_update_helper.py'])
+            self.assertEqual(verify_staged(state, pinned_key=self.pin), helper)
+            changed = helper / 'manager_update_parent.py'
+            original = changed.read_bytes()
+            changed.write_bytes(original + b'\n# changed\n')
+            with self.assertRaisesRegex(Refused, 'manager_helper_staged_file_changed'):
+                verify_staged(state, pinned_key=self.pin)
+            changed.write_bytes(original)
             with self.assertRaises(Refused):
                 stage_verified(state, signed, self.archive, pinned_key=self.pin)
 

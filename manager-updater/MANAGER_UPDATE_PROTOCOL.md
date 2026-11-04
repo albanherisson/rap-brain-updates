@@ -51,7 +51,8 @@ the previously installed bootstrap launcher/dashboard. Its authenticated HTTP
 request is handed to the parent that retains the owned server handle; the
 parent exits after releasing the helper pipe. The copy smoke rejects a POST
 without a token and leaves a synthetic server unchanged. This candidate is
-not a production release and the helper bundle/recovery packaging is missing.
+not a production release; a signed capability installer and macOS rehearsal
+are still missing.
 The helper now records a small private terminal result after the HTTP parent
 exits; a pending maintenance ticket is displayed as requiring a check instead
 of reporting a false success. A crash before the report still needs a
@@ -74,6 +75,10 @@ candidate deterministically (40 Python modules and the existing CryptoKit
 verifier). `manager_helper_release.py` authenticates a separate Manager-key
 signed manifest and exact archive before creating a private helper directory;
 extra members, changed bytes and stale signatures are rejected on copies.
+The private staged helper retains the signed manifest; the candidate Manager
+verifies every helper file again before importing the parent module. A changed
+file or expired helper manifest blocks the action. The signed capability
+installer must include the verifier and its imports in the app bundle.
 No production helper manifest is signed or published. Staging this helper
 does not install or authorize the Manager UI; a signed one-time capability
 installer still has to deliver both the helper and reviewed app changes.
@@ -84,12 +89,8 @@ installer still has to deliver both the helper and reviewed app changes.
    interruption and rollback with the real macOS app on disposable copies.
    Keep the live database and configuration outside the signed archive and
    never restore over them automatically.
-2. Wire an authenticated request from the HTTP child to the parent with the
-   retained Popen handle. Package and verify the external helper and all of
-   its imports outside the app being replaced; exit the parent after handing
-   off the lifetime lock. Provide a safe recovery entrypoint for failed stop,
-   timeout and interrupted phases, without pulling a fresh release or
-   silently starting a second attempt. The terminal path also needs genuine
+2. Deliver the reviewed helper, the verifier and UI through one signed
+   capability installer. The terminal recovery path still needs genuine
    macOS codesign and process tests. Exercise actual process ownership and
    exclusion on disposable macOS copies.
 3. Rehearse success, failed health, interrupted phases and exact rollback on

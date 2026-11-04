@@ -40,8 +40,15 @@ class ParentBridgeTest(unittest.TestCase):
             '{"action":"install-signed-manager"}')
         handoff = Mock()
         state = {'process': object()}
-        with patch('manager_update_parent.prepare_handoff', return_value=handoff) as prepare:
-            self.assertTrue(self.handler(self.root, self.root, self.root, state))
+        with patch('manager_helper_release.verify_staged',
+                   return_value=self.root / 'helper') as verified, \
+             patch('manager_update_parent.prepare_handoff',
+                   return_value=handoff) as prepare:
+            try:
+                self.assertTrue(self.handler(self.root, self.root, self.root, state))
+            finally:
+                sys.path.remove(str(self.root / 'helper'))
+        verified.assert_called_once_with(self.root / 'secure-update')
         prepare.assert_called_once_with(self.root, self.root / 'launcher.py',
             self.root / 'secure-update', state,
             self.root / 'secure-update' / 'helper' / 'manager_update_helper.py')

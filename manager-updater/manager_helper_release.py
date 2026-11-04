@@ -136,6 +136,13 @@ def stage_verified(state, signed_manifest, archive, *, pinned_key=PUBLISHER_PIN,
         temporary = state / ('helper-tmp-' + secrets.token_hex(16))
         temporary.mkdir(mode=0o700)
         try:
+            manifest_path = temporary / 'signed-manifest.json'
+            fd = os.open(manifest_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                         os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'wb') as stream:
+                stream.write(signed_manifest)
+                stream.flush()
+                os.fsync(stream.fileno())
             for name in HELPER_FILES:
                 path = temporary / name
                 fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
@@ -157,3 +164,31 @@ def stage_verified(state, signed_manifest, archive, *, pinned_key=PUBLISHER_PIN,
         os.close(lock)
     return {'staged': True, 'files': len(HELPER_FILES),
             'archive_sha256': manifest['archive_sha256']}
+
+
+def verify_staged(state, *, pinned_key=PUBLISHER_PIN, now=None):
+    """Authenticate the exact private helper again before importing its code."""
+    state = _state(state)
+    folder = state / 'helper'
+    if folder.is_symlink() or not folder.is_dir():
+        raise Refused('manager_helper_not_staged')
+    info = folder.stat()
+    if info.st_uid != os.getuid() or info.st_mode & 0o077:
+        raise Refused('manager_helper_directory_unsafe')
+    if set(os.listdir(folder)) != set(HELPER_FILES) | {'signed-manifest.json'}:
+        raise Refused('manager_helper_staged_layout')
+    path = folder / 'signed-manifest.json'
+    if path.is_symlink() or not path.is_file() or path.stat().st_size > 65536:
+        raise Refused('manager_helper_staged_manifest')
+    if path.stat().st_uid != os.getuid() or path.stat().st_mode & 0o077:
+        raise Refused('manager_helper_manifest_unsafe')
+    manifest = verify_manifest(path.read_bytes(), pinned_key=pinned_key, now=now)
+    for name in HELPER_FILES:
+        path = folder / name
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 250_000:
+            raise Refused('manager_helper_staged_file_unsafe')
+        info = path.stat()
+        if info.st_uid != os.getuid() or info.st_mode & 0o077 or \
+                digest(path.read_bytes()) != manifest['files'][name]:
+            raise Refused('manager_helper_staged_file_changed')
+    return folder
