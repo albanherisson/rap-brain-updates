@@ -83,6 +83,12 @@ installer must include the verifier and its imports in the app bundle.
 No production helper manifest is signed or published. Staging this helper
 does not install or authorize the Manager UI; a signed one-time capability
 installer still has to deliver both the helper and reviewed app changes.
+`manager_capability_bundle.py` now builds one deterministic, unsigned
+candidate archive from the pinned post-Creative Beta 14 launcher/dashboard,
+the external helper archive, and exactly ten additional app verifier modules.
+It rejects a changed baseline and contains no database, Ollama configuration,
+library or private key. The owner Beta 14 ZIP smoke passes locally. This is
+packaging input only: there is no signed capability manifest or installer yet.
 
 ## Remaining implementation gates
 
