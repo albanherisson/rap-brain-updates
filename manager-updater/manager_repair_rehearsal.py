@@ -2,6 +2,8 @@
 from pathlib import Path
 import json
 import sqlite3
+import subprocess
+import sys
 import tempfile
 
 from app_bundle_backup import inventory, save_app_backup
@@ -10,9 +12,19 @@ from creative_transaction import safe_path
 from manager_repair_transaction import OfflineManagerRepair
 
 
+def smoke_copy(launcher, source, branch):
+    result = subprocess.run([sys.executable, '-B', str(launcher),
+        '--smoke-test', '--rap-brain-dir', str(source),
+        '--backup-dir', str(branch / 'manager-backups')],
+        capture_output=True, stdin=subprocess.DEVNULL, timeout=60)
+    if result.returncode != 0:
+        raise Refused('manager_repair_rehearsal_runtime_failed')
+    return True
+
+
 def rehearse_on_copy(source, launcher, state, signed, archive, *, pinned_key=None,
                      compiler=None, signer=None, original_verifier=None,
-                     restored_verifier=None):
+                     restored_verifier=None, runtime_check=smoke_copy):
     source = safe_path(source, directory=True)
     launcher = safe_path(launcher)
     state = safe_path(state, directory=True)
@@ -87,6 +99,9 @@ def rehearse_on_copy(source, launcher, state, signed, archive, *, pinned_key=Non
                 raise Refused('manager_repair_rehearsal_' + scenario + '_failed')
             if scenario == 'rollback' and inventory(copy_app) != original:
                 raise Refused('manager_repair_rehearsal_rollback_changed')
+            if scenario == 'commit':
+                if runtime_check(copy_launcher, copy_source, branch) is not True:
+                    raise Refused('manager_repair_rehearsal_runtime_failed')
             if before_data != {p.name: p.read_bytes() for p in data.iterdir()}:
                 raise Refused('manager_repair_rehearsal_data_changed')
     if inventory(app) != original:
