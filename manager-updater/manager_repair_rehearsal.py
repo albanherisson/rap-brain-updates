@@ -24,7 +24,8 @@ def smoke_copy(launcher, source, branch):
 
 def rehearse_on_copy(source, launcher, state, signed, archive, *, pinned_key=None,
                      compiler=None, signer=None, original_verifier=None,
-                     restored_verifier=None, runtime_check=smoke_copy):
+                     restored_verifier=None, runtime_check=smoke_copy,
+                     post_commit=None):
     source = safe_path(source, directory=True)
     launcher = safe_path(launcher)
     state = safe_path(state, directory=True)
@@ -102,6 +103,9 @@ def rehearse_on_copy(source, launcher, state, signed, archive, *, pinned_key=Non
             if scenario == 'commit':
                 if runtime_check(copy_launcher, copy_source, branch) is not True:
                     raise Refused('manager_repair_rehearsal_runtime_failed')
+                if post_commit is not None and post_commit(copy_source,
+                        copy_launcher, copy_state) is not True:
+                    raise Refused('manager_repair_rehearsal_followup_failed')
             if before_data != {p.name: p.read_bytes() for p in data.iterdir()}:
                 raise Refused('manager_repair_rehearsal_data_changed')
     if inventory(app) != original:
