@@ -11,7 +11,7 @@ from manager_version_label_candidate import prepare_launcher as version_label
 BASELINE = 'e072f29f2416ed286c67f8faa73f517a1fb5deafb20cf125ac8f8417722a6464'
 OLD_CHECK = "if code!=200 or json.loads(body).get('state')!='idle':raise RuntimeError('Manager update state invalid')"
 NEW_CHECK = ("if code!=200 or json.loads(body).get('state') not in "
-             "('idle','aborted','committed','rolled_back','restored_stopped','check_required'):"
+             "('idle','aborted','committed','rolled_back','restored_stopped'):"
              "raise RuntimeError('Manager update state invalid')")
 OLD_HANDOFF = 'handoff=prepare_handoff(rap_dir,Path(__file__).resolve(),secure_state,'
 OLD_EXIT = 'if handle_manager_update_request(root,rap_dir,backup_dir,supervisor_state):return 0'
