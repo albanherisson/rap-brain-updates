@@ -1,9 +1,12 @@
 """A failed signature never reaches rehearsal or installation."""
 import unittest
 from unittest.mock import Mock, patch
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from creative_release import Refused, digest
-from manager_repair_installer import ARCHIVE, CHANNEL, install_from_channel
+from manager_repair_installer import (ARCHIVE, CHANNEL, embedded_downloader,
+                                      install_from_channel)
 from test_manager_repair_transaction import RepairTransactionTests
 
 
@@ -50,6 +53,20 @@ class RepairInstallerTests(unittest.TestCase):
         self.assertEqual(result['state'], 'committed')
         self.assertEqual(calls, [CHANNEL, ARCHIVE, 'copy_rehearsal'])
         transaction.install.assert_called_once()
+
+    def test_embedded_signed_release_is_complete_or_refused(self):
+        with TemporaryDirectory(dir=Path.cwd()) as folder:
+            root = Path(folder)
+            self.assertIsNone(embedded_downloader(root))
+            (root / 'signed-release.json').write_bytes(b'signed')
+            with self.assertRaises(Refused):
+                embedded_downloader(root)
+            (root / 'repair-1.zip').write_bytes(b'archive')
+            download = embedded_downloader(root)
+            self.assertEqual(download(CHANNEL, 65536), b'signed')
+            self.assertEqual(download(ARCHIVE, 2_000_000), b'archive')
+            with self.assertRaises(Refused):
+                download('https://other.invalid/', 2_000_000)
 
 
 if __name__ == '__main__':
