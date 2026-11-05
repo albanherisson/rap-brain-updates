@@ -19,12 +19,13 @@ import urllib.request
 import zipfile
 
 
-SOURCE_REF = 'f3809f896363f44e242b3d3a5ce27f9c0fac7e7e'
-SOURCE_MANIFEST_SHA256 = 'abff9b78b270a58d31940bef2d7a0ffebe908fd5c31e97124bae784dd3d2a7f7'
+SOURCE_REF = 'c73c4b318f468eb077b3f013556ffa7368d804ba'
+SOURCE_MANIFEST_SHA256 = '352377006e6199190a80bd7bbadbb5d5c949371c40d75a46c4a47048beb13028'
 CAPABILITY_REF = '19d84a4db0713a658265df3358a68c1adc6388be'
 CAPABILITY_SHA256 = '963ca5733de48d7d336b1c214a0b8f308aa582aa3484a5ae51769daafe0cf8a7'
 BASE = 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/'
 OUTPUT = 'Réparer les mises à jour Rap Brain.app'
+PUBLIC_OUTPUT = 'RapBrain_Manager_Repair_Publication.zip'
 
 
 def digest(raw):
@@ -65,8 +66,10 @@ def prepare(home, *, downloader=fetch):
         raise ValueError('macos_required')
     home = Path(home).resolve()
     output = home / 'Downloads' / OUTPUT
-    if output.exists() or output.is_symlink():
-        raise ValueError('repair_app_already_exists')
+    public_output = home / 'Downloads' / PUBLIC_OUTPUT
+    if (output.exists() or output.is_symlink() or
+            public_output.exists() or public_output.is_symlink()):
+        raise ValueError('repair_publication_already_exists')
     manifest_url = BASE + SOURCE_REF + '/manager-repair/source-hashes.json'
     raw = downloader(manifest_url, 10_000)
     if digest(raw) != SOURCE_MANIFEST_SHA256:
@@ -104,6 +107,11 @@ def prepare(home, *, downloader=fetch):
         from manager_repair_release import (ARCHIVE, FILES, LAUNCHER,
             NATIVE_SOURCE, OLD_HELPER, SERVER, verify_release)
         from manager_repair_rehearsal import rehearse_on_copy
+        from manager_stable_update2_candidate import (BASELINE as DASHBOARD,
+            MEMBER as UPDATE_MEMBER, archive_for as build_update)
+        from manager_update_release import verify_archive as verify_update_archive
+        from manager_update_release import verify_manifest as verify_update_manifest
+        from manager_update_rehearsal import rehearse_on_copy as rehearse_update
         from mac_sign_manager_capability import envelope
         from creative_release import digest as release_digest
         from creative_transaction import safe_path
@@ -151,23 +159,61 @@ def prepare(home, *, downloader=fetch):
             'helper_manifest_base64': base64.b64encode(helper_signed).decode()}
         signed = envelope(payload, key)
         verify_release(signed, package)
-        report = rehearse_on_copy(source, launcher, state, signed, package)
+        with zipfile.ZipFile(io.BytesIO(archive)) as capability:
+            update_zip, update_code = build_update(
+                capability.read('app/dashboard_beta14.html'))
+        update_payload = {'schema': 'rapbrain-manager-production-v1',
+            'sequence': 2, 'issued_at': now - 1,
+            'expires_at': now + 14 * 86400,
+            'production_install_authorized': True,
+            'data_migrations': [], 'validation': validation,
+            'files': [{'path': UPDATE_MEMBER,
+                       'baseline_sha256': DASHBOARD,
+                       'payload_sha256': digest(update_code)}],
+            'required_server_sha256': SERVER,
+            'archive_url': ('https://raw.githubusercontent.com/albanherisson/'
+                'rap-brain-updates/main/manager-stable/update-2.zip'),
+            'archive_sha256': digest(update_zip),
+            'archive_bytes': len(update_zip)}
+        update_signed = envelope(update_payload, key)
+        update_verified = verify_update_manifest(update_signed)
+        verify_update_archive(update_zip, update_verified)
+        def test_followup(copy_source, copy_launcher, copy_state):
+            report = rehearse_update(copy_source, copy_launcher, copy_state,
+                                      update_signed, update_zip)
+            return report == {'state': 'copy_rehearsal_passed',
+                              'live_files_modified': False,
+                              'live_data_opened': False}
+        report = rehearse_on_copy(source, launcher, state, signed, package,
+                                  post_commit=test_followup)
         if report != {'state': 'passed', 'active_files_modified': False,
                       'live_database_opened': False,
                       'live_configuration_opened': False}:
             raise ValueError('mac_copy_rehearsal_failed')
         candidate_app = root / OUTPUT
         build_finder(candidate_app, release=signed, archive=package, source=root)
-        if output.exists() or output.is_symlink():
+        public = zip_files({'manager-repair/manifest.json': signed,
+                            'manager-repair/repair-1.zip': package,
+                            'manager-stable/manifest.json': update_signed,
+                            'manager-stable/update-2.zip': update_zip})
+        if (output.exists() or output.is_symlink() or
+                public_output.exists() or public_output.is_symlink()):
             raise ValueError('repair_app_destination_changed')
+        fd = os.open(public_output, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                     os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'wb') as stream:
+            stream.write(public)
+            stream.flush()
+            os.fsync(stream.fileno())
         os.rename(candidate_app, output)
-    return output
+    return output, public_output
 
 
 def main():
-    result = prepare(Path.home())
+    app, publication = prepare(Path.home())
     print('REPARATION PREPAREE : OK')
-    print('Application Finder : ' + str(result))
+    print('Application Finder : ' + str(app))
+    print('Publication publique : ' + str(publication))
     print('Aucun fichier Rap Brain actif modifié. Ouvre cette application dans Finder après avoir fermé Rap Brain et le Manager.')
 
 
