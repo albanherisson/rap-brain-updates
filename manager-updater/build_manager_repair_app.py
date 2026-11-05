@@ -28,7 +28,7 @@ end run
 '''
 
 
-def build(destination, *, source=ROOT, compiler='/usr/bin/osacompile',
+def build(destination, *, release, archive, source=ROOT, compiler='/usr/bin/osacompile',
           signer='/usr/bin/codesign'):
     if sys.platform != 'darwin':
         raise Refused('macos_required_for_finder_app')
@@ -37,6 +37,8 @@ def build(destination, *, source=ROOT, compiler='/usr/bin/osacompile',
             destination.parent.is_symlink() or not destination.parent.is_dir()):
         raise Refused('manager_repair_destination_invalid')
     files = dependencies(source, entry='manager_repair_installer')
+    from manager_repair_release import verify_release
+    verify_release(release, archive)
     script = destination.parent / (destination.stem + '.applescript')
     if script.exists() or script.is_symlink():
         raise Refused('manager_repair_script_exists')
@@ -50,6 +52,8 @@ def build(destination, *, source=ROOT, compiler='/usr/bin/osacompile',
             shutil.copyfile(path, resources / path.name)
         for name in ('python_bootstrap_selector.sh', 'verify_ed25519.swift'):
             shutil.copyfile(Path(source) / name, resources / name)
+        (resources / 'signed-release.json').write_bytes(release)
+        (resources / 'repair-1.zip').write_bytes(archive)
         for args in ((signer, '--force', '--deep', '--sign', '-', str(destination)),
                      (signer, '--verify', '--deep', '--strict', str(destination))):
             subprocess.run(args, check=True, capture_output=True, timeout=90)
@@ -62,6 +66,7 @@ def build(destination, *, source=ROOT, compiler='/usr/bin/osacompile',
 
 
 if __name__ == '__main__':
-    if len(sys.argv) != 2:
-        raise SystemExit('Usage: build_manager_repair_app.py DESTINATION_APP')
-    print(build(sys.argv[1]))
+    if len(sys.argv) != 4:
+        raise SystemExit('Usage: build_manager_repair_app.py DESTINATION_APP SIGNED_JSON REPAIR_ZIP')
+    print(build(sys.argv[1], release=Path(sys.argv[2]).read_bytes(),
+                archive=Path(sys.argv[3]).read_bytes()))
