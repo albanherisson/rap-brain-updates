@@ -16,6 +16,7 @@ class RepairRehearsalTests(unittest.TestCase):
                     (fixture.source / 'data').iterdir()}
             from unittest.mock import patch
             from creative_release import digest
+            followups = []
             with patch('manager_repair_release.SERVER', digest(fixture.server)):
                 report = rehearse_on_copy(fixture.source, fixture.launcher,
                     fixture.state, fixture.fixture.sign(fixture.fixture.payload),
@@ -24,12 +25,14 @@ class RepairRehearsalTests(unittest.TestCase):
                     signer=lambda *_a, **_k: True,
                     original_verifier=lambda *_a, **_k: True,
                     restored_verifier=lambda *_a, **_k: True,
-                    runtime_check=lambda *_a: True)
+                    runtime_check=lambda *_a: True,
+                    post_commit=lambda *_a: followups.append(True) or True)
             self.assertEqual(report, {'state': 'passed',
                 'live_database_opened': False,
                 'live_configuration_opened': False,
                 'active_files_modified': False})
             self.assertEqual(inventory(fixture.app), original)
+            self.assertEqual(followups, [True])
             self.assertEqual({p.name: p.read_bytes() for p in
                               (fixture.source / 'data').iterdir()}, data)
         finally:
