@@ -34,7 +34,8 @@ def process_rows():
     rows = {}
     for line in ps('-axww', '-o', 'pid=,ppid=,pgid=,uid=,command=').splitlines():
         parts = line.split(None, 4)
-        if len(parts) != 5 or not all(v.isdecimal() for v in parts[:4]):
+        if (len(parts) != 5 or not all(v.isdecimal() for v in parts[:3]) or
+                not re.fullmatch(r'-?[0-9]+', parts[3])):
             raise ValueError('process_inventory_unparseable')
         pid, ppid, pgid, uid = map(int, parts[:4])
         if pid in rows:
