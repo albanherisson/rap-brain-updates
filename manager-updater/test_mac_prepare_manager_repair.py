@@ -23,7 +23,10 @@ class PrepareRepairTests(unittest.TestCase):
             'manager_version_label_candidate.py', 'manager_locale_identity_candidate.py',
             'manager_native_handoff_candidate.py', 'manager_handoff_repair_candidate.py',
             'manager_capability_inventory.py', 'mac_sign_manager_capability.py',
-            'python_bootstrap_selector.sh', 'verify_ed25519.swift'))
+            'python_bootstrap_selector.sh', 'verify_ed25519.swift',
+            'manager_stable_update2_candidate.py'))
+        names.update(path.name for path in dependencies(ROOT,
+            entry='manager_update_rehearsal'))
         raw = json.dumps({n: hashlib.sha256((ROOT / n).read_bytes()).hexdigest()
                           for n in sorted(names)}, sort_keys=True,
                          separators=(',', ':')).encode()
