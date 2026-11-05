@@ -4,6 +4,8 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import types
@@ -105,6 +107,33 @@ class FinishTest(unittest.TestCase):
                     sys.modules.pop(name, None)
                 else:
                     sys.modules[name] = module
+
+    def test_candidate_starts_isolated_http_with_signed_receipt(self):
+        launcher, dashboard, _ = original_bytes()
+        resources = (WORK / 'evidence/RapBrainManager_App_Beta14/'
+                     'RapBrainManager_App_Beta14/Rap Brain Manager Beta 14.app/'
+                     'Contents/Resources')
+        with tempfile.TemporaryDirectory(prefix='rapbrain-finish-smoke-') as tmp:
+            base = Path(tmp)
+            app = base / 'Resources'
+            app.mkdir()
+            (app / 'launch_manager.py').write_bytes(prepare_launcher(launcher))
+            (app / 'dashboard_beta14.html').write_bytes(prepare_dashboard(dashboard))
+            shutil.copyfile(resources / 'beta13-icon.png', app / 'beta13-icon.png')
+            source = base / 'rap-brain'
+            source.mkdir()
+            (source / 'server.py').write_text('# disposable\n')
+            state = base / 'backups/secure-update'
+            state.mkdir(parents=True)
+            (state / 'manager-handoff-result.json').write_text(json.dumps({
+                'attempt': 'f' * 32, 'backup_id': 'f' * 32,
+                'installation_performed': True, 'state': 'committed'}))
+            (state / 'manager-handoff-result.json').chmod(0o600)
+            result = subprocess.run([sys.executable, '-B', str(app / 'launch_manager.py'),
+                '--smoke-test', '--candidate', str(resources / 'candidate'),
+                '--rap-brain-dir', str(source), '--backup-dir', str(base / 'backups')],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stderr[-1000:])
 
 
 if __name__ == '__main__':
