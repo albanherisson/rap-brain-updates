@@ -23,7 +23,8 @@ class RepairRehearsalTests(unittest.TestCase):
                     compiler=lambda *_: b'copy-only native executable',
                     signer=lambda *_a, **_k: True,
                     original_verifier=lambda *_a, **_k: True,
-                    restored_verifier=lambda *_a, **_k: True)
+                    restored_verifier=lambda *_a, **_k: True,
+                    runtime_check=lambda *_a: True)
             self.assertEqual(report, {'state': 'passed',
                 'live_database_opened': False,
                 'live_configuration_opened': False,
