@@ -37,9 +37,11 @@ class OrphanIdentityTest(unittest.TestCase):
                 rescue.process_secrets(34084, b'c' * 64 + b'\n')
 
     def test_parse_requires_numeric_process_fields(self):
-        sample = '34084 1 34084 501 /usr/bin/python -u /path/server.py\n'
+        sample = ('34084 1 34084 501 /usr/bin/python -u /path/server.py\n'
+                  '33871 1 33871 -2 /usr/libexec/dhcp6d\n')
         with patch.object(rescue, 'ps', return_value=sample):
             self.assertEqual(rescue.process_rows()[34084][0:3], (1, 34084, 501))
+            self.assertEqual(rescue.process_rows()[33871][2], -2)
         with patch.object(rescue, 'ps', return_value='34084 ? 34084 501 x\n'):
             with self.assertRaises(ValueError):
                 rescue.process_rows()
