@@ -34,6 +34,26 @@ def fetch(url, limit):
     return raw
 
 
+def embedded_downloader(directory):
+    """Use the one-time signed release packed in the Finder app, if present."""
+    directory = safe_path(directory, directory=True)
+    files = {CHANNEL: directory / 'signed-release.json',
+             ARCHIVE: directory / 'repair-1.zip'}
+    present = [os.path.lexists(path) for path in files.values()]
+    if not any(present):
+        return None
+    if not all(present):
+        raise Refused('manager_repair_embedded_incomplete')
+    def read(url, limit):
+        if url not in files:
+            raise Refused('manager_repair_embedded_url_changed')
+        path = safe_path(files[url])
+        if path.stat().st_size > limit:
+            raise Refused('manager_repair_embedded_size')
+        return path.read_bytes()
+    return read
+
+
 def install_from_channel(source, launcher, state, *, downloader=fetch,
                          transaction_factory=OfflineManagerRepair,
                          rehearsal=rehearse_on_copy, inspector=None,
@@ -75,7 +95,9 @@ def main(argv=None):
         'Rap Brain Manager Beta 14.app' / 'Contents' / 'Resources' /
         'launch_manager.py')
     state = home / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
-    result = install_from_channel(source, launcher, state)
+    embedded = embedded_downloader(Path(__file__).resolve().parent)
+    result = install_from_channel(source, launcher, state,
+                                  downloader=embedded or fetch)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     return 0 if result.get('state') == 'committed' else 2
 
