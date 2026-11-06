@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Rap Brain local server. Python standard library only."""
 import hashlib, json, os, re, sqlite3, urllib.request, urllib.error, datetime, mimetypes, threading, time, concurrent.futures, subprocess, tempfile, sys, platform, socket, logging, traceback
+import unicodedata
 from pathlib import Path
 from contextlib import contextmanager
 import creative_rag
@@ -359,6 +360,24 @@ def parse_batch(text, expected):
  if missing:raise ValueError('Lignes non analysées ou fiche incomplète : '+', '.join(map(str,sorted(missing))))
  return [found[n] for n in expected]
 
+def decoder_claim_audit(entry, lines):
+ """Literal location hints only; an unmatched homophone may still be valid."""
+ def words(value):
+  return ' '.join(re.findall(r'[^\W_]+',unicodedata.normalize('NFKC',value).casefold()))
+ sources={line['index']:words(line['text']) for line in lines}
+ number=entry['line']; findings=[]
+ for category,key in (('slang','expression'),('wordplay','expression'),('references','name')):
+  for claim in entry[category]:
+   phrase=claim[key]
+   variants=[words(part) for part in phrase.split('/')]
+   variants=[part for part in variants if part]
+   def found(text):return any(' '+part+' ' in ' '+text+' ' for part in variants)
+   if found(sources.get(number,'')):scope='target_literal'
+   elif any(found(text) for n,text in sources.items() if n!=number and abs(n-number)<=3):scope='neighbor_literal'
+   else:scope='not_literal'
+   findings.append({'category':category,'phrase':phrase,'scope':scope})
+ return findings
+
 def saved_decoder_segment(checkpoint, track_id, group, total):
  """A checkpoint is reusable only when its actual saved report still covers this text."""
  if not checkpoint or checkpoint['track_id']!=track_id or checkpoint['kind']!='lyric_decoder_lines':return False
@@ -439,6 +458,7 @@ def job_runner(job_id, track_id):
      result.append(line_result)
    for entry in result:
     entry['original_line']=lines[entry['line']-1]['text']
+    entry['evidence_audit']=decoder_claim_audit(entry,lines[max(0,start-3):min(len(lines),stop+3)])
    content='## Lignes '+str(start+1)+'–'+str(stop)+'/'+str(len(lines))+'\n'+json.dumps(result,ensure_ascii=False,indent=2)
    with conn() as c:
     c.execute('BEGIN IMMEDIATE')
