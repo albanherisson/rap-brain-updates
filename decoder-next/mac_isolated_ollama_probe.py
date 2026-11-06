@@ -15,8 +15,8 @@ import urllib.request
 
 
 REPOSITORY = 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/'
-COMMIT = 'c618608182df6b8c8f408786ad6c17df0c90e85b'
-CANDIDATE_SHA256 = '0e156174f245423ba90188a66f47ee33dfb03fcd7567cfcd44d86e0221087464'
+COMMIT = '96bb7c74169a7fec5c891bcb846cfb2236e7ed18'
+CANDIDATE_SHA256 = '4ce5d525aee65fe079590d1501a9d714d31dcc6ccd7bf5dc9beec96b1b2a8937'
 BASELINE_SHA256 = 'e7947990aec65830375b5e5e5fb6241f0161ead56309c970a8cc7c0970e56f27'
 SYNTHETIC_LYRICS = (
     'I took the last train past a paper moon\n'
