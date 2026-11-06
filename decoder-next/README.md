@@ -85,3 +85,7 @@ then removes that attribute from the live app and verifies the signature.
 On a failed final verification it restores the original root attribute. It
 never edits Rap Brain or re-signs the application. The Mac repair has not yet
 been executed; the signed Decoder ZIP has not been created.
+The first repair attempt refused before backup or mutation because the script
+requested terse `codesign` output, while the FinderInfo-specific diagnostic
+was visible only with `--verbose=2` on this Mac. The revised repair requests
+that detail and otherwise still fails closed.
