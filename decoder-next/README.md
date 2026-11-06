@@ -41,5 +41,6 @@ found in nearby lines, or not found literally. These are review hints, not
 semantic truth labels: homophones and indirect allusions may be valid.
 The release compatibility test creates an archive and a disposable signature
 in memory only. It proves the existing Manager verifier accepts `server.py`
-and refuses database/configuration paths. Its synthetic validation flags are
+and refuses database/configuration paths, then drills the candidate code swap
+and exact rollback on disposable app/server copies. Its validation flags are
 fixtures, not evidence that a real Mac release has passed these gates.
