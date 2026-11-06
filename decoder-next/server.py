@@ -336,13 +336,15 @@ def parse_batch(text, expected):
  if missing:raise ValueError('Lignes non analysées ou fiche incomplète : '+', '.join(map(str,sorted(missing))))
  return [found[n] for n in expected]
 
-def saved_decoder_segment(checkpoint, track_id, group):
+def saved_decoder_segment(checkpoint, track_id, group, total):
  """A checkpoint is reusable only when its actual saved report still covers this text."""
  if not checkpoint or checkpoint['track_id']!=track_id or checkpoint['kind']!='lyric_decoder_lines':return False
  try:
   content=checkpoint['content']
-  if not isinstance(content,str) or not content.startswith('## Lignes '):return False
-  saved=json.loads(content.split('\n',1)[1])
+  if not isinstance(content,str):return False
+  heading,body=content.split('\n',1)
+  if heading!=f"## Lignes {group[0]['index']}–{group[-1]['index']}/{total}":return False
+  saved=json.loads(body)
   if not isinstance(saved,list) or len(saved)!=len(group):return False
   expected=[line['index'] for line in group]
   parsed=parse_batch(json.dumps({'lines':saved},ensure_ascii=False),expected)
@@ -369,7 +371,7 @@ def job_runner(job_id, track_id):
    previous=rows('''SELECT s.fingerprint,a.track_id,a.kind,a.content
      FROM job_segments s LEFT JOIN analyses a ON a.id=s.analysis_id
      WHERE s.job_id=? AND s.segment_index=?''',(job_id,idx))
-   if previous and previous[0]['fingerprint']==fp and saved_decoder_segment(previous[0],track_id,group):
+   if previous and previous[0]['fingerprint']==fp and saved_decoder_segment(previous[0],track_id,group,len(lines)):
     update(progress=int(90*stop/len(lines)),step=f'Lignes {stop}/{len(lines)} déjà mémorisées')
     continue
    expected=[x['index'] for x in group]

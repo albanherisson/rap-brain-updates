@@ -40,13 +40,16 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.calls=0
   def fake_ollama(messages,**kwargs):
    self.calls+=1
-   prompt=messages[0]['content']
-   targets=json.loads(prompt.split(' TARGET: ',1)[1])
-   return json.dumps({'lines':[{'line':line['index'],'interpretation':'Une scène de voyage',
-    'intention':'Peut évoquer un déplacement','slang':[],'wordplay':[],
-    'rhymes':[],'references':[],'writing_lesson':'Écrire une scène originale',
-    'techniques':['image'],'confidence':'plausible'} for line in targets]})
+   return self.make_output(messages)
   self.server.call_ollama=fake_ollama
+
+ def make_output(self,messages):
+  prompt=messages[0]['content']
+  targets=json.loads(prompt.split(' TARGET: ',1)[1])
+  return json.dumps({'lines':[{'line':line['index'],'interpretation':'Une scène de voyage',
+   'intention':'Peut évoquer un déplacement','slang':[],'wordplay':[],
+   'rhymes':[],'references':[],'writing_lesson':'Écrire une scène originale',
+   'techniques':['image'],'confidence':'plausible'} for line in targets]})
 
  def restore_environment(self):
   if self.old_data is None:os.environ.pop('RAP_BRAIN_DATA',None)
@@ -108,6 +111,53 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual(2,self.calls)
   self.assertEqual('incomplete historical report',self.server.rows('SELECT content FROM analyses WHERE id=?',(old,))[0]['content'])
   self.assertEqual(2,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_wrong_report_range_is_not_accepted_as_checkpoint(self):
+  self.assertEqual('done',self.run_job()['status'])
+  old=self.server.rows('SELECT id,content FROM analyses')[0]
+  with self.server.conn() as c:
+   c.execute('UPDATE analyses SET content=? WHERE id=?',
+    (old['content'].replace('## Lignes 1–3/3','## Lignes 1–2/3'),old['id']))
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,self.calls)
+  self.assertEqual(2,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_resume_after_later_batch_fails_preserves_first_batch(self):
+  lines=[f'Original rap line number {n} with enough words' for n in range(1,8)]
+  with self.server.conn() as c:c.execute('UPDATE tracks SET lyrics=? WHERE id=?',('\n'.join(lines),self.track))
+  def fail_second(messages,**kwargs):
+   targets=json.loads(messages[0]['content'].split(' TARGET: ',1)[1])
+   if targets[0]['index']>=4:raise RuntimeError('Synthetic model outage')
+   return self.make_output(messages)
+  self.server.call_ollama=fail_second
+  self.assertEqual('error',self.run_job()['status'])
+  first=self.server.rows('SELECT id,content FROM analyses')[0]
+  self.assertEqual(1,len(self.server.rows('SELECT job_id FROM job_segments')))
+  observed=[]
+  def recovered(messages,**kwargs):
+   targets=json.loads(messages[0]['content'].split(' TARGET: ',1)[1])
+   observed.append([t['index'] for t in targets])
+   return self.make_output(messages)
+  self.server.call_ollama=recovered
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual([[4,5,6],[7]],observed)
+  self.assertEqual(3,len(self.server.rows('SELECT job_id FROM job_segments')))
+  self.assertEqual(3,len(self.server.rows('SELECT id FROM analyses')))
+  self.assertEqual(first['content'],self.server.rows('SELECT content FROM analyses WHERE id=?',(first['id'],))[0]['content'])
+
+ def test_malformed_batch_falls_back_to_each_line_without_gaps(self):
+  def malformed_batch(messages,**kwargs):
+   targets=json.loads(messages[0]['content'].split(' TARGET: ',1)[1])
+   if len(targets)>1:return '{"lines":[]}'
+   return self.make_output(messages)
+  self.server.call_ollama=malformed_batch
+  self.assertEqual('done',self.run_job()['status'])
+  content=self.server.rows('SELECT content FROM analyses')[0]['content']
+  entries=json.loads(content.split('\n',1)[1])
+  self.assertEqual([1,2,3],[x['line'] for x in entries])
+  self.assertEqual(self.lyrics.splitlines(),[x['original_line'] for x in entries])
 
 
 if __name__=='__main__':unittest.main()
