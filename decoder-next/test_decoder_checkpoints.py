@@ -1,0 +1,113 @@
+"""Isolated decoder resume tests: synthetic songs, SQLite and fake Ollama only."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+import types
+import unittest
+
+
+SERVER = Path(__file__).with_name('server.py')
+
+
+class DecoderCheckpointTests(unittest.TestCase):
+ def setUp(self):
+  self.tmp = tempfile.TemporaryDirectory(prefix='rapbrain-decoder-test-')
+  self.addCleanup(self.tmp.cleanup)
+  self.old_data = os.environ.get('RAP_BRAIN_DATA')
+  os.environ['RAP_BRAIN_DATA'] = self.tmp.name
+  self.addCleanup(self.restore_environment)
+  sys.path.insert(0,str(SERVER.parent))
+  self.addCleanup(lambda: sys.path.remove(str(SERVER.parent)))
+  # The decoder does not invoke the separate Creative Engine or RAG modules.
+  previous={name:sys.modules.get(name) for name in ('creative_engine','creative_rag')}
+  for name in previous:sys.modules[name]=types.ModuleType(name)
+  def restore_imports():
+   for name,module in previous.items():
+    if module is None:sys.modules.pop(name,None)
+    else:sys.modules[name]=module
+  self.addCleanup(restore_imports)
+  spec=importlib.util.spec_from_file_location('synthetic_decoder_server',SERVER)
+  self.server=importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(self.server)
+  self.server.init()
+  self.lyrics='Silver train under city light\nCold rain on the avenue tonight\nI count the stops and write another line'
+  with self.server.conn() as c:
+   self.track=c.execute('INSERT INTO tracks(artist,title,lyrics) VALUES(?,?,?)',('Invented','Synthetic',self.lyrics)).lastrowid
+   self.job=c.execute('INSERT INTO jobs(track_id) VALUES(?)',(self.track,)).lastrowid
+  self.calls=0
+  def fake_ollama(messages,**kwargs):
+   self.calls+=1
+   prompt=messages[0]['content']
+   targets=json.loads(prompt.split(' TARGET: ',1)[1])
+   return json.dumps({'lines':[{'line':line['index'],'interpretation':'Une scène de voyage',
+    'intention':'Peut évoquer un déplacement','slang':[],'wordplay':[],
+    'rhymes':[],'references':[],'writing_lesson':'Écrire une scène originale',
+    'techniques':['image'],'confidence':'plausible'} for line in targets]})
+  self.server.call_ollama=fake_ollama
+
+ def restore_environment(self):
+  if self.old_data is None:os.environ.pop('RAP_BRAIN_DATA',None)
+  else:os.environ['RAP_BRAIN_DATA']=self.old_data
+
+ def run_job(self):
+  # The macOS maintenance wrapper uses the real user's home directory; exercise
+  # its wrapped decoder function against only this synthetic database.
+  self.server._rb_original_job_runner_v1(self.job,self.track)
+  return self.server.rows('SELECT status,error FROM jobs WHERE id=?',(self.job,))[0]
+
+ def retry(self):
+  with self.server.conn() as c:c.execute("UPDATE jobs SET status='pending' WHERE id=?",(self.job,))
+
+ def test_valid_checkpoint_is_reused_without_model_call(self):
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(1,self.calls)
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(1,self.calls)
+  self.assertEqual(1,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_missing_report_is_redecoded(self):
+  self.assertEqual('done',self.run_job()['status'])
+  with self.server.conn() as c:c.execute('DELETE FROM analyses')
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,self.calls)
+  self.assertEqual(1,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_misdirected_checkpoint_preserves_unrelated_analysis(self):
+  self.assertEqual('done',self.run_job()['status'])
+  with self.server.conn() as c:
+   other=c.execute('INSERT INTO tracks(artist,title,lyrics) VALUES(?,?,?)',('Other','Track','unrelated')).lastrowid
+   innocent=c.execute('INSERT INTO analyses(track_id,kind,content) VALUES(?,?,?)',(other,'manual','Original report')).lastrowid
+   c.execute('UPDATE job_segments SET analysis_id=? WHERE job_id=?',(innocent,self.job))
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,self.calls)
+  self.assertEqual('Original report',self.server.rows('SELECT content FROM analyses WHERE id=?',(innocent,))[0]['content'])
+  self.assertEqual(3,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_changed_lyrics_preserve_old_report(self):
+  self.assertEqual('done',self.run_job()['status'])
+  old=self.server.rows('SELECT id,content FROM analyses')[0]
+  with self.server.conn() as c:c.execute('UPDATE tracks SET lyrics=? WHERE id=?',(self.lyrics.replace('Cold rain','Warm rain'),self.track))
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,self.calls)
+  self.assertEqual(old['content'],self.server.rows('SELECT content FROM analyses WHERE id=?',(old['id'],))[0]['content'])
+  self.assertEqual(2,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_malformed_saved_report_is_redecoded_without_overwrite(self):
+  self.assertEqual('done',self.run_job()['status'])
+  old=self.server.rows('SELECT id FROM analyses')[0]['id']
+  with self.server.conn() as c:c.execute('UPDATE analyses SET content=? WHERE id=?',('incomplete historical report',old))
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,self.calls)
+  self.assertEqual('incomplete historical report',self.server.rows('SELECT content FROM analyses WHERE id=?',(old,))[0]['content'])
+  self.assertEqual(2,len(self.server.rows('SELECT id FROM analyses')))
+
+
+if __name__=='__main__':unittest.main()
