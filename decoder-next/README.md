@@ -74,3 +74,14 @@ copies, and uses the existing local publisher identity to create one public
 sequence-4 ZIP in Downloads. It does not install anything. The private key,
 SQLite, library and Ollama configuration never enter that ZIP. Its Mac copy
 and signing path still needs to be run on the owner's Mac before publication.
+
+On the owner's first publisher attempt, `codesign` refused the active Manager
+because the bundle root carried `com.apple.FinderInfo`; its nested executable
+validated. `mac_repair_manager_finderinfo.py` is a targeted Mac repair: it
+copies the complete app into a private backup, verifies matching code bytes
+and the root attribute, proves on a disposable copy that removing only this
+attribute restores the existing signature, drills the attribute restoration,
+then removes that attribute from the live app and verifies the signature.
+On a failed final verification it restores the original root attribute. It
+never edits Rap Brain or re-signs the application. The Mac repair has not yet
+been executed; the signed Decoder ZIP has not been created.
