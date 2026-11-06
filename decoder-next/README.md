@@ -66,3 +66,11 @@ in memory only. It proves the existing Manager verifier accepts `server.py`
 and refuses database/configuration paths, then drills the candidate code swap
 and exact rollback on disposable app/server copies. Its validation flags are
 fixtures, not evidence that a real Mac release has passed these gates.
+
+`mac_sign_decoder_release.py` is the next Mac-only gate. It pins this server,
+checks the active baseline and accepted Manager sequence 3, verifies the app
+signature, rehearses a server-only swap and exact rollback on disposable Mac
+copies, and uses the existing local publisher identity to create one public
+sequence-4 ZIP in Downloads. It does not install anything. The private key,
+SQLite, library and Ollama configuration never enter that ZIP. Its Mac copy
+and signing path still needs to be run on the owner's Mac before publication.
