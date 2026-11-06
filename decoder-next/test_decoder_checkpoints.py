@@ -408,7 +408,8 @@ class DecoderCheckpointTests(unittest.TestCase):
    payload=json.loads(request.data)
    self.assertEqual('synthetic:1',payload['model'])
    prompt=payload['messages'][0]['content']
-   self.assertIn('paper moon',prompt)
+   self.assertIn('sole in Seoul',prompt)
+   self.assertIn('last train leaves at seven past ten',prompt)
    self.assertNotIn(self.lyrics,prompt)
    observed.append(('ollama',request.full_url))
    result={'message':{'content':self.make_output(payload['messages'])}}
