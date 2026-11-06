@@ -31,3 +31,7 @@ python3 -B -m unittest -v test_decoder_checkpoints.py
 
 No production installation or signed release is included. The Mac runtime,
 real Ollama output and release signing still require separate validation.
+`mac_isolated_ollama_probe.py` is prepared for that later Mac check. It pins
+the candidate source hash, imports only inside a temporary directory, sends
+three invented lines to the local Ollama API, and never opens the live SQLite
+database. It has only been tested with a fake HTTP response so far.

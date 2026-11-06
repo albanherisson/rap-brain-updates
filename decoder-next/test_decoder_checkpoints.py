@@ -1,5 +1,7 @@
 """Isolated decoder resume tests: synthetic songs, SQLite and fake Ollama only."""
 import importlib.util
+import io
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -9,6 +11,7 @@ import threading
 import types
 import unittest
 import urllib.request
+from unittest.mock import patch
 
 
 SERVER = Path(__file__).with_name('server.py')
@@ -288,6 +291,64 @@ class DecoderCheckpointTests(unittest.TestCase):
   saved=json.loads(self.server.rows('SELECT content FROM analyses')[0]['content'].split('\n',1)[1])
   self.assertEqual(replacement.splitlines(),[entry['original_line'] for entry in saved])
   self.assertEqual(2,len(observed))
+
+ def test_isolated_ollama_probe_uses_only_synthetic_lyrics(self):
+  probe_file=SERVER.with_name('mac_isolated_ollama_probe.py')
+  spec=importlib.util.spec_from_file_location('synthetic_mac_probe',probe_file)
+  probe=importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(probe)
+  root=Path(self.tmp.name)/'active'
+  (root/'data').mkdir(parents=True)
+  active=root/'server.py'
+  active.write_text('synthetic active server')
+  config=root/'data/ollama_model.json'
+  config.write_text(json.dumps({'model':'synthetic:1'}))
+  probe.BASELINE_SHA256=hashlib.sha256(active.read_bytes()).hexdigest()
+  candidate=SERVER.read_bytes()
+  observed=[]
+  class Response(io.BytesIO):
+   def __init__(self,data,url):super().__init__(data);self.url=url
+   def geturl(self):return self.url
+  def open_url(request,**kwargs):
+   if isinstance(request,str):
+    observed.append(('download',request))
+    return Response(candidate,request)
+   self.assertEqual('http://127.0.0.1:11434/api/chat',request.full_url)
+   payload=json.loads(request.data)
+   self.assertEqual('synthetic:1',payload['model'])
+   prompt=payload['messages'][0]['content']
+   self.assertIn('paper moon',prompt)
+   self.assertNotIn(self.lyrics,prompt)
+   observed.append(('ollama',request.full_url))
+   result={'message':{'content':self.make_output(payload['messages'])}}
+   return Response(json.dumps(result).encode(),request.full_url)
+  with patch.dict(os.environ,{'OLLAMA_URL':'http://127.0.0.1:11434'}), \
+       patch.object(probe.urllib.request,'urlopen',side_effect=open_url):
+   report=probe.run_probe(root)
+  self.assertEqual('PASS_ISOLATED',report['status'])
+  self.assertEqual(3,report['line_count'])
+  self.assertEqual(['download','ollama'],[kind for kind,_ in observed])
+  self.assertEqual('synthetic active server',active.read_text())
+  self.assertEqual({'model':'synthetic:1'},json.loads(config.read_text()))
+
+ def test_isolated_probe_rejects_unpinned_candidate_before_import(self):
+  spec=importlib.util.spec_from_file_location('synthetic_mac_probe_bad',
+   SERVER.with_name('mac_isolated_ollama_probe.py'))
+  probe=importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(probe)
+  root=Path(self.tmp.name)/'active'
+  (root/'data').mkdir(parents=True)
+  active=root/'server.py'
+  active.write_text('synthetic active server')
+  probe.BASELINE_SHA256=hashlib.sha256(active.read_bytes()).hexdigest()
+  probe.CANDIDATE_SHA256='0'*64
+  class Response(io.BytesIO):
+   def geturl(self):return probe.REPOSITORY+probe.COMMIT+'/decoder-next/server.py'
+  with patch.object(probe.urllib.request,'urlopen',return_value=Response(SERVER.read_bytes())) as request:
+   with self.assertRaisesRegex(ValueError,'candidate_hash_mismatch'):
+    probe.run_probe(root)
+  self.assertEqual(1,request.call_count)
+  self.assertEqual('synthetic active server',active.read_text())
 
 
 if __name__=='__main__':unittest.main()
