@@ -421,6 +421,7 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual([1,2,3],[item['line'] for item in report['review_sample']])
   self.assertEqual('Une scène de voyage',report['review_sample'][0]['interpretation_fr'])
   self.assertEqual('Écrire une scène originale',report['review_sample'][0]['writing_lesson_fr'])
+  self.assertEqual([],report['review_sample'][0]['literal_evidence_hints'])
   self.assertEqual(['download','ollama'],[kind for kind,_ in observed])
   self.assertEqual('synthetic active server',active.read_text())
   self.assertEqual({'model':'synthetic:1'},json.loads(config.read_text()))
@@ -433,6 +434,7 @@ class DecoderCheckpointTests(unittest.TestCase):
   sample=probe.review_sample([{'line':1,'interpretation':'A'*400,
    'wordplay':[{'expression':'train','mechanism':'B'*240,'evidence':'plausible'}]*5,
    'references':[{'name':'Seoul','verification':'unverified'}]*5,
+   'evidence_audit':[{'category':'reference','phrase':'Seoul','scope':'not_literal'}]*13,
    'writing_lesson':'C'*400}])
   self.assertEqual(280,len(sample[0]['interpretation_fr']))
   self.assertEqual(280,len(sample[0]['writing_lesson_fr']))
@@ -440,6 +442,8 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual(180,len(sample[0]['wordplay'][0]['mechanism']))
   self.assertEqual('plausible',sample[0]['wordplay'][0]['evidence'])
   self.assertEqual('unverified',sample[0]['references'][0]['verification'])
+  self.assertEqual(12,len(sample[0]['literal_evidence_hints']))
+  self.assertEqual('not_literal',sample[0]['literal_evidence_hints'][0]['scope'])
 
  def test_isolated_probe_rejects_unpinned_candidate_before_import(self):
   spec=importlib.util.spec_from_file_location('synthetic_mac_probe_bad',
