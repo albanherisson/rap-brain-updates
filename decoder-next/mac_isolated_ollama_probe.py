@@ -70,6 +70,10 @@ def review_sample(entries):
             'references': [{'name': item['name'][:100],
                             'verification': item['verification']}
                            for item in entry['references'][:4]],
+            'literal_evidence_hints': [{'category': hint['category'],
+                                        'phrase': hint['phrase'][:100],
+                                        'scope': hint['scope']}
+                                       for hint in entry.get('evidence_audit', [])[:12]],
             'writing_lesson_fr': entry['writing_lesson'].strip()[:280],
         })
     return sample
@@ -156,6 +160,8 @@ def run_probe(active_root=None):
             output = json.load(response)
         content = (output.get('message') or {}).get('content', '')
         result = candidate.parse_batch(content, [line['index'] for line in lines])
+        for entry in result:
+            entry['evidence_audit'] = candidate.decoder_claim_audit(entry, lines)
         alignment = claim_alignment(result, lines)
         if hashlib.sha256(active_server.read_bytes()).hexdigest() != before:
             raise ValueError('active_server_changed_during_probe')
