@@ -187,7 +187,9 @@ class ServerOnlyReleaseCompatibility(unittest.TestCase):
    (home/'Downloads/RapBrainManagerBackups').mkdir()
    value='ab'*32
    attributes={str(app):value}
+   commands=[]
    def fake_run(args,**kwargs):
+    commands.append(args)
     if args[0]=='/usr/bin/ditto':
      shutil.copytree(args[1],args[2]);attributes[args[2]]=attributes.get(args[1])
     elif args[0]=='/usr/bin/xattr':
@@ -199,7 +201,8 @@ class ServerOnlyReleaseCompatibility(unittest.TestCase):
      if args[1]=='-wx':attributes[args[4]]=args[3]
     elif args[0]=='/usr/bin/codesign' and attributes.get(args[-1]):
      return subprocess.CompletedProcess(args,1,b'',
-      b'Disallowed xattr com.apple.FinderInfo found')
+      (b'Disallowed xattr com.apple.FinderInfo found' if '--verbose=2' in args
+       else b'resource fork, Finder information, or similar detritus not allowed'))
     return subprocess.CompletedProcess(args,0,b'',b'')
    with patch.object(finder_repair,'run',side_effect=fake_run), \
         patch.object(finder_repair.sys,'platform','darwin'):
@@ -210,6 +213,8 @@ class ServerOnlyReleaseCompatibility(unittest.TestCase):
    backup=Path(result['backup'])
    self.assertEqual(value,attributes[str(backup/'original.app')])
    self.assertEqual(value+'\n',(backup/'finderinfo.hex').read_text())
+   self.assertTrue(any(cmd[0]=='/usr/bin/codesign' and '--verbose=2' in cmd
+                       for cmd in commands))
 
  def test_finderinfo_repair_refuses_unrelated_signature_failure(self):
   with tempfile.TemporaryDirectory(prefix='finderinfo-other-failure-') as temp:
