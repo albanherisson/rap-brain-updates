@@ -44,6 +44,10 @@ database. It has only been tested with a fake HTTP response so far.
 The probe reports counts of quoted claims found literally on their line,
 found in nearby lines, or not found literally. These are review hints, not
 semantic truth labels: homophones and indirect allusions may be valid.
+It also returns a short, bounded sample of French interpretations, proposed
+wordplay, references and writing lessons for the three invented lines. This
+sample is for a person to judge whether the model is useful and cautious;
+`PASS_ISOLATED` certifies structure and isolation, not artistic correctness.
 The release compatibility test creates an archive and a disposable signature
 in memory only. It proves the existing Manager verifier accepts `server.py`
 and refuses database/configuration paths, then drills the candidate code swap
