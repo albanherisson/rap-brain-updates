@@ -10,6 +10,9 @@ It also refuses malformed structured claims (slang, wordplay, references,
 rhyme cues), prompts Ollama to repair its JSON on retry, and keeps the
 existing line-by-line fallback for incomplete batches. An empty category is
 represented by `[]`; the validator does not prove the truth of an inference.
+Artist/title metadata is serialized as untrusted JSON. Numbered target lyrics
+follow a separate marker after the quoted context, so a title or lyric that
+contains a lookalike target label cannot redefine the batch boundary.
 The Lexicon indexer skips damaged legacy fields and continues to index healthy
 lines from the same report. This does not change or erase existing reports.
 Previously cached Lexicon rows are not rebuilt in this candidate; a separate
