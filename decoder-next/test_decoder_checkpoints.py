@@ -369,9 +369,28 @@ class DecoderCheckpointTests(unittest.TestCase):
    report=probe.run_probe(root)
   self.assertEqual('PASS_ISOLATED',report['status'])
   self.assertEqual(3,report['line_count'])
+  self.assertEqual([1,2,3],[item['line'] for item in report['review_sample']])
+  self.assertEqual('Une scène de voyage',report['review_sample'][0]['interpretation_fr'])
+  self.assertEqual('Écrire une scène originale',report['review_sample'][0]['writing_lesson_fr'])
   self.assertEqual(['download','ollama'],[kind for kind,_ in observed])
   self.assertEqual('synthetic active server',active.read_text())
   self.assertEqual({'model':'synthetic:1'},json.loads(config.read_text()))
+
+ def test_probe_review_sample_is_bounded_and_keeps_uncertainty(self):
+  spec=importlib.util.spec_from_file_location('synthetic_mac_probe_sample',
+   SERVER.with_name('mac_isolated_ollama_probe.py'))
+  probe=importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(probe)
+  sample=probe.review_sample([{'line':1,'interpretation':'A'*400,
+   'wordplay':[{'expression':'train','mechanism':'B'*240,'evidence':'plausible'}]*5,
+   'references':[{'name':'Seoul','verification':'unverified'}]*5,
+   'writing_lesson':'C'*400}])
+  self.assertEqual(280,len(sample[0]['interpretation_fr']))
+  self.assertEqual(280,len(sample[0]['writing_lesson_fr']))
+  self.assertEqual(4,len(sample[0]['wordplay']))
+  self.assertEqual(180,len(sample[0]['wordplay'][0]['mechanism']))
+  self.assertEqual('plausible',sample[0]['wordplay'][0]['evidence'])
+  self.assertEqual('unverified',sample[0]['references'][0]['verification'])
 
  def test_isolated_probe_rejects_unpinned_candidate_before_import(self):
   spec=importlib.util.spec_from_file_location('synthetic_mac_probe_bad',
