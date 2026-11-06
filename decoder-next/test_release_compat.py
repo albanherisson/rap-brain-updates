@@ -27,6 +27,10 @@ spec=importlib.util.spec_from_file_location('mac_decoder_publisher',
  Path(__file__).with_name('mac_sign_decoder_release.py'))
 publisher=importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publisher)
+spec=importlib.util.spec_from_file_location('mac_finderinfo_repair',
+ Path(__file__).with_name('mac_repair_manager_finderinfo.py'))
+finder_repair=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(finder_repair)
 
 SERVER=Path(__file__).with_name('server.py')
 BASELINE='e7947990aec65830375b5e5e5fb6241f0161ead56309c970a8cc7c0970e56f27'
@@ -172,6 +176,57 @@ class ServerOnlyReleaseCompatibility(unittest.TestCase):
     key.chmod(0o644)
     with self.assertRaisesRegex(ValueError,'publisher_private_key_unsafe'):
      publisher.sign(key,b'synthetic manifest')
+
+ def test_finderinfo_repair_preserves_private_backup_and_only_removes_root_attr(self):
+  with tempfile.TemporaryDirectory(prefix='finderinfo-repair-test-') as temp:
+   home=Path(temp)
+   app=home/finder_repair.APP_RELATIVE
+   (app/'Contents/Resources').mkdir(parents=True)
+   launcher=app/'Contents/Resources/launch_manager.py'
+   launcher.write_bytes(b'unchanged signed code')
+   (home/'Downloads/RapBrainManagerBackups').mkdir()
+   value='ab'*32
+   attributes={str(app):value}
+   def fake_run(args,**kwargs):
+    if args[0]=='/usr/bin/ditto':
+     shutil.copytree(args[1],args[2]);attributes[args[2]]=attributes.get(args[1])
+    elif args[0]=='/usr/bin/xattr':
+     if args[1]=='-px':
+      found=attributes.get(args[3])
+      return subprocess.CompletedProcess(args,0 if found else 1,
+       (found or '').encode(),b'')
+     if args[1]=='-d':attributes.pop(args[3],None)
+     if args[1]=='-wx':attributes[args[4]]=args[3]
+    elif args[0]=='/usr/bin/codesign' and attributes.get(args[-1]):
+     return subprocess.CompletedProcess(args,1,b'',
+      b'Disallowed xattr com.apple.FinderInfo found')
+    return subprocess.CompletedProcess(args,0,b'',b'')
+   with patch.object(finder_repair,'run',side_effect=fake_run), \
+        patch.object(finder_repair.sys,'platform','darwin'):
+    result=finder_repair.repair(home)
+   self.assertEqual('repaired',result['state'])
+   self.assertEqual(b'unchanged signed code',launcher.read_bytes())
+   self.assertNotIn(str(app),attributes)
+   backup=Path(result['backup'])
+   self.assertEqual(value,attributes[str(backup/'original.app')])
+   self.assertEqual(value+'\n',(backup/'finderinfo.hex').read_text())
+
+ def test_finderinfo_repair_refuses_unrelated_signature_failure(self):
+  with tempfile.TemporaryDirectory(prefix='finderinfo-other-failure-') as temp:
+   home=Path(temp)
+   app=home/finder_repair.APP_RELATIVE
+   (app/'Contents/Resources').mkdir(parents=True)
+   (app/'Contents/Resources/launch_manager.py').write_bytes(b'code')
+   (home/'Downloads/RapBrainManagerBackups').mkdir()
+   def fake_run(args,**kwargs):
+    if args[0]=='/usr/bin/xattr':
+     return subprocess.CompletedProcess(args,0,b'ab'*32,b'')
+    return subprocess.CompletedProcess(args,1,b'',b'code object not signed')
+   with patch.object(finder_repair,'run',side_effect=fake_run), \
+        patch.object(finder_repair.sys,'platform','darwin'):
+    with self.assertRaisesRegex(ValueError,'signature_failure_not_only_finderinfo'):
+     finder_repair.repair(home)
+   self.assertEqual(b'code',(app/'Contents/Resources/launch_manager.py').read_bytes())
 
 
 if __name__=='__main__':unittest.main()
