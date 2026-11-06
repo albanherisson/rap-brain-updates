@@ -141,7 +141,11 @@ def _lexical_items(line):
  out=[]; no=line.get('line')
  if type(no) is not int: return out
  def add(category,phrase,detail,confidence=''):
-  phrase=str(phrase or '').strip()[:200]; detail=str(detail or '').strip()[:650]
+  # Legacy reports can contain arbitrary JSON in any nested field. Never turn
+  # a list/dict into a lexical term or pass one to SQLite as confidence.
+  if not isinstance(phrase,str) or not isinstance(detail,str):return
+  phrase=phrase.strip()[:200]; detail=detail.strip()[:650]
+  confidence=confidence if isinstance(confidence,str) else ''
   if phrase and detail:out.append((no,category,phrase,detail,confidence))
  for obj in line.get('slang',[]) if isinstance(line.get('slang'),list) else []:
   if isinstance(obj,dict) and isinstance(obj.get('meaning'),str) and obj['meaning'].strip():
@@ -153,7 +157,9 @@ def _lexical_items(line):
    add('wordplay',obj.get('expression'),obj['mechanism']+' · '+', '.join(x for x in readings if isinstance(x,str)),obj.get('evidence',''))
  for obj in line.get('rhymes',[]) if isinstance(line.get('rhymes'),list) else []:
   if isinstance(obj,str):add('rhyme','rhyme/assonance',obj)
-  elif isinstance(obj,dict):add('rhyme',obj.get('words') or obj.get('expression') or 'rhyme',json.dumps(obj,ensure_ascii=False))
+  elif isinstance(obj,dict):
+   phrase=obj.get('words') or obj.get('expression')
+   if isinstance(phrase,str):add('rhyme',phrase,json.dumps(obj,ensure_ascii=False))
  for obj in line.get('techniques',[]) if isinstance(line.get('techniques'),list) else []:
   if isinstance(obj,str):add('technique',obj,line.get('writing_lesson',''))
  for obj in line.get('references',[]) if isinstance(line.get('references'),list) else []:
