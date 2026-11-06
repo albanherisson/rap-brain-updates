@@ -52,6 +52,11 @@ database. It has only been tested with a fake HTTP response so far.
 The probe reports counts of quoted claims found literally on their line,
 found in nearby lines, or not found literally. These are review hints, not
 semantic truth labels: homophones and indirect allusions may be valid.
+The first real Mac run returned structurally valid JSON but treated ordinary
+contrasts and actions as wordplay. The revised prompt reserves wordplay for
+two distinct supported readings, and the next synthetic probe pairs a clear
+`sole`/`Seoul` homophone with two plain control lines. Its output still needs
+human review; no model result is hard-coded as a guaranteed pass.
 It also returns a short, bounded sample of French interpretations, proposed
 wordplay, references and writing lessons for the three invented lines. This
 sample is for a person to judge whether the model is useful and cautious;
