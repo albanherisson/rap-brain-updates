@@ -224,6 +224,32 @@ class DecoderCheckpointTests(unittest.TestCase):
   line=json.loads(report.split('\n',1)[1])[0]
   self.assertEqual('Silver train',line['slang'][0]['expression'])
 
+ def test_claim_audit_marks_literal_neighbor_and_unlocated_without_rejecting_homophone(self):
+  lyrics='I catch the cold train in Seoul\nMy soul rides on a slow refrain\nNo silver crown under city light'
+  with self.server.conn() as c:c.execute('UPDATE tracks SET lyrics=? WHERE id=?',(lyrics,self.track))
+  def model(messages,**kwargs):
+   obj=json.loads(self.make_output(messages))
+   first=obj['lines'][0]
+   first['wordplay']=[{'expression':'Seoul','mechanism':'homophone possible',
+    'readings':['ville','âme'],'evidence':'plausible'},
+    {'expression':'soul','mechanism':'écho proche','readings':['âme','musique'],
+     'evidence':'plausible'}]
+   first['references']=[{'name':'Atlantis','explanation':'Allusion à vérifier',
+    'verification':'unverified'}]
+   return json.dumps(obj)
+  self.server.call_ollama=model
+  self.assertEqual('done',self.run_job()['status'])
+  content=self.server.rows('SELECT content FROM analyses')[0]['content']
+  first=json.loads(content.split('\n',1)[1])[0]
+  self.assertEqual(['target_literal','neighbor_literal','not_literal'],
+   [claim['scope'] for claim in first['evidence_audit']])
+  self.assertEqual('plausible',first['wordplay'][0]['evidence'])
+  self.assertEqual('unverified',first['references'][0]['verification'])
+  self.assertEqual(lyrics.splitlines()[0],first['original_line'])
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(1,len(self.server.rows('SELECT id FROM analyses')))
+
  def test_malformed_nested_claims_never_complete_a_job(self):
   def model(messages,**kwargs):
    obj=json.loads(self.make_output(messages))
