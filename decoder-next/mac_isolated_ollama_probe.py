@@ -56,6 +56,25 @@ def claim_alignment(entries, lines):
     return totals
 
 
+def review_sample(entries):
+    """Small, bounded model excerpt for human review; input is synthetic only."""
+    sample = []
+    for entry in entries:
+        sample.append({
+            'line': entry['line'],
+            'interpretation_fr': entry['interpretation'].strip()[:280],
+            'wordplay': [{'expression': item['expression'][:100],
+                          'mechanism': item['mechanism'][:180],
+                          'evidence': item['evidence']}
+                         for item in entry['wordplay'][:4]],
+            'references': [{'name': item['name'][:100],
+                            'verification': item['verification']}
+                           for item in entry['references'][:4]],
+            'writing_lesson_fr': entry['writing_lesson'].strip()[:280],
+        })
+    return sample
+
+
 def _read_model(active_root):
     cfg = active_root / 'data' / 'ollama_model.json'
     try:
@@ -145,6 +164,7 @@ def run_probe(active_root=None):
                 'structured_wordplay': sum(len(line['wordplay']) for line in result),
                 'structured_references': sum(len(line['references']) for line in result),
                 'literal_alignment': alignment,
+                'review_sample': review_sample(result),
                 'live_database_opened': False, 'live_files_modified': False,
                 'server_started': False, 'candidate_sha256': CANDIDATE_SHA256}
 
