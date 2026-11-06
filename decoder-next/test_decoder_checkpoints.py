@@ -5,8 +5,10 @@ import os
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import types
 import unittest
+import urllib.request
 
 
 SERVER = Path(__file__).with_name('server.py')
@@ -240,6 +242,35 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual(1,len(found['entries']))
   self.assertEqual('cold rain',found['entries'][0]['phrase'])
   self.assertEqual(found,self.server.lexicon_entries('cold rain','expressions'))
+
+ def test_blank_reimport_over_http_preserves_lyrics_and_analyses(self):
+  with self.server.conn() as c:
+   aid=c.execute('INSERT INTO analyses(track_id,kind,content) VALUES(?,?,?)',
+    (self.track,'manual','Historical analysis')).lastrowid
+  http=self.server.BoundedHTTPServer(('127.0.0.1',0),self.server.Handler)
+  thread=threading.Thread(target=http.serve_forever,daemon=True)
+  thread.start()
+  try:
+   for route,payload in (
+    ('/api/tracks',{'artist':'Invented','title':'Synthetic','lyrics':''}),
+    ('/api/tracks',{'artist':'Invented','title':'Synthetic','lyrics':None}),
+    ('/api/import',{'items':[{'artist':'Invented','title':'Synthetic','lyrics':'   '}]}),
+    ('/api/import',{'items':[{'artist':'Invented','title':'Synthetic','lyrics':None}]}),
+   ):
+    request=urllib.request.Request(
+     f'http://127.0.0.1:{http.server_port}{route}',
+     data=json.dumps(payload).encode('utf-8'),
+     headers={'Content-Type':'application/json'})
+    with urllib.request.urlopen(request,timeout=3) as response:
+     self.assertEqual(200,response.status)
+     self.assertTrue(json.load(response)['ok'])
+  finally:
+   http.shutdown();http.server_close();thread.join(timeout=3)
+  saved=self.server.rows('SELECT lyrics,source FROM tracks WHERE id=?',(self.track,))[0]
+  self.assertEqual(self.lyrics,saved['lyrics'])
+  self.assertEqual('manual',saved['source'])
+  self.assertEqual('Historical analysis',
+   self.server.rows('SELECT content FROM analyses WHERE id=?',(aid,))[0]['content'])
 
 
 if __name__=='__main__':unittest.main()

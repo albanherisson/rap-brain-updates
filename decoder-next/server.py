@@ -669,10 +669,14 @@ class Handler(BaseHTTPRequestHandler):
      if cur.rowcount!=1:raise ValueError('Morceau introuvable. Aucune modification effectuée.')
     return self.send({'ok':True,'id':track_id})
    if p=='/api/tracks':
-    artist=str(d.get('artist','')).strip()[:120];title=str(d.get('title','')).strip()[:180];album=str(d.get('album','')).strip()[:180];lyrics=str(d.get('lyrics',''))[:200000]
+    artist=str(d.get('artist','')).strip()[:120];title=str(d.get('title','')).strip()[:180];album=str(d.get('album','')).strip()[:180];lyrics=str(d.get('lyrics') or '')[:200000]
     if not artist or not title:raise ValueError('Artiste et titre obligatoires.')
     with conn() as c:
-     c.execute('INSERT INTO tracks(artist,album,title,lyrics,source) VALUES(?,?,?,?,?) ON CONFLICT(artist,album,title) DO UPDATE SET lyrics=excluded.lyrics,source=excluded.source',(artist,album,title,lyrics,d.get('source','manual')))
+     c.execute('''INSERT INTO tracks(artist,album,title,lyrics,source) VALUES(?,?,?,?,?)
+       ON CONFLICT(artist,album,title) DO UPDATE SET
+       lyrics=CASE WHEN length(trim(excluded.lyrics))>0 THEN excluded.lyrics ELSE tracks.lyrics END,
+       source=CASE WHEN length(trim(excluded.lyrics))>0 THEN excluded.source ELSE tracks.source END''',
+       (artist,album,title,lyrics,d.get('source','manual')))
      id=c.execute('SELECT id FROM tracks WHERE artist=? AND album=? AND title=?',(artist,album,title)).fetchone()[0]
     return self.send({'ok':True,'id':id})
    if p=='/api/import':
@@ -684,7 +688,11 @@ class Handler(BaseHTTPRequestHandler):
      for t in items:
       artist=str(t.get('artist','')).strip()[:120];title=str(t.get('title','')).strip()[:180]
       if not artist or not title:continue
-      c.execute('INSERT INTO tracks(artist,album,title,lyrics,source) VALUES(?,?,?,?,?) ON CONFLICT(artist,album,title) DO UPDATE SET lyrics=excluded.lyrics,source=excluded.source',(artist,str(t.get('album',''))[:180],title,str(t.get('lyrics',''))[:200000],'import'))
+      c.execute('''INSERT INTO tracks(artist,album,title,lyrics,source) VALUES(?,?,?,?,?)
+        ON CONFLICT(artist,album,title) DO UPDATE SET
+        lyrics=CASE WHEN length(trim(excluded.lyrics))>0 THEN excluded.lyrics ELSE tracks.lyrics END,
+        source=CASE WHEN length(trim(excluded.lyrics))>0 THEN excluded.source ELSE tracks.source END''',
+        (artist,str(t.get('album',''))[:180],title,str(t.get('lyrics') or '')[:200000],'import'))
       count+=1
     return self.send({'ok':True,'count':count})
    if p=='/api/lyrics-search':
