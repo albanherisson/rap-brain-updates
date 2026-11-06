@@ -27,7 +27,7 @@ The signed runtime guard suffix is checked byte-for-byte against its baseline.
 Run only on synthetic data:
 
 ```sh
-python3 -B -m unittest -v test_decoder_checkpoints.py
+python3 -B -m unittest discover -s decoder-next -p 'test_*.py' -v
 ```
 
 No production installation or signed release is included. The Mac runtime,
@@ -39,3 +39,7 @@ database. It has only been tested with a fake HTTP response so far.
 The probe reports counts of quoted claims found literally on their line,
 found in nearby lines, or not found literally. These are review hints, not
 semantic truth labels: homophones and indirect allusions may be valid.
+The release compatibility test creates an archive and a disposable signature
+in memory only. It proves the existing Manager verifier accepts `server.py`
+and refuses database/configuration paths. Its synthetic validation flags are
+fixtures, not evidence that a real Mac release has passed these gates.
