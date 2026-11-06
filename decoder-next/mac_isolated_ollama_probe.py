@@ -9,6 +9,7 @@ import re
 import sys
 import tempfile
 import types
+import unicodedata
 import urllib.parse
 import urllib.request
 
@@ -22,6 +23,37 @@ SYNTHETIC_LYRICS = (
     'My old map folds but the street stays new\n'
     'I count each stop and write a different route'
 )
+
+
+def _words(value):
+    return ' '.join(re.findall(r'\w+', unicodedata.normalize('NFKC', value).casefold()))
+
+
+def claim_alignment(entries, lines):
+    """Count literal surface matches only; an unmatched allusion is not disproved."""
+    totals = {'target_literal': 0, 'neighbor_literal': 0, 'not_literal': 0}
+    sources = {line['index']: _words(line['text']) for line in lines}
+    for entry in entries:
+        number = entry['line']
+        for category, key in (('slang', 'expression'), ('wordplay', 'expression'),
+                              ('references', 'name')):
+            for claim in entry.get(category, []):
+                if not isinstance(claim, dict) or not isinstance(claim.get(key), str):
+                    continue
+                variants = [_words(part) for part in claim[key].split('/')]
+                variants = [part for part in variants if part]
+                if not variants:
+                    continue
+                def found(text):
+                    return any(' ' + part + ' ' in ' ' + text + ' ' for part in variants)
+                if found(sources.get(number, '')):
+                    totals['target_literal'] += 1
+                elif any(found(source) for line_no, source in sources.items()
+                         if line_no != number and abs(line_no - number) <= 3):
+                    totals['neighbor_literal'] += 1
+                else:
+                    totals['not_literal'] += 1
+    return totals
 
 
 def _read_model(active_root):
@@ -105,12 +137,14 @@ def run_probe(active_root=None):
             output = json.load(response)
         content = (output.get('message') or {}).get('content', '')
         result = candidate.parse_batch(content, [line['index'] for line in lines])
+        alignment = claim_alignment(result, lines)
         if hashlib.sha256(active_server.read_bytes()).hexdigest() != before:
             raise ValueError('active_server_changed_during_probe')
         return {'status': 'PASS_ISOLATED', 'line_count': len(result),
                 'structured_slang': sum(len(line['slang']) for line in result),
                 'structured_wordplay': sum(len(line['wordplay']) for line in result),
                 'structured_references': sum(len(line['references']) for line in result),
+                'literal_alignment': alignment,
                 'live_database_opened': False, 'live_files_modified': False,
                 'server_started': False, 'candidate_sha256': CANDIDATE_SHA256}
 

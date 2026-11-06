@@ -375,5 +375,20 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual(1,request.call_count)
   self.assertEqual('synthetic active server',active.read_text())
 
+ def test_literal_claim_audit_distinguishes_line_context_and_allusion(self):
+  spec=importlib.util.spec_from_file_location('synthetic_mac_probe_audit',
+   SERVER.with_name('mac_isolated_ollama_probe.py'))
+  probe=importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(probe)
+  lines=self.server.split_lyric_lines("Paper moon above the train\nCold rain on the track\nWe'll reach Seoul by dawn")
+  entries=[{'line':1,'slang':[{'expression':'paper moon'}],
+    'wordplay':[{'expression':'cold rain'}],
+    'references':[{'name':'soul'}]},
+    {'line':2,'slang':[{'expression':'unseen city'}],
+     'wordplay':[],'references':[]},
+    {'line':3,'slang':[],'wordplay':[],'references':[{'name':'Seoul'}]}]
+  self.assertEqual({'target_literal':2,'neighbor_literal':1,'not_literal':2},
+   probe.claim_alignment(entries,lines))
+
 
 if __name__=='__main__':unittest.main()

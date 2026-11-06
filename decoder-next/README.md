@@ -36,3 +36,6 @@ real Ollama output and release signing still require separate validation.
 the candidate source hash, imports only inside a temporary directory, sends
 three invented lines to the local Ollama API, and never opens the live SQLite
 database. It has only been tested with a fake HTTP response so far.
+The probe reports counts of quoted claims found literally on their line,
+found in nearby lines, or not found literally. These are review hints, not
+semantic truth labels: homophones and indirect allusions may be valid.
