@@ -16,6 +16,8 @@ Previously cached Lexicon rows are not rebuilt in this candidate; a separate
 read-only inventory should precede any migration of derived index rows.
 Blank or null lyrics in the existing single-track and bulk import routes no
 longer erase saved lyrics or replace the track's source metadata.
+When lyrics change during an in-flight decode, the job returns to `pending`
+and restarts from the current text; historical reports remain untouched.
 The normal three-line prompt, Ollama settings, worker guard and HTTP routes
 remain in the copied server.
 The synthetic tests use a temporary home directory and run through the

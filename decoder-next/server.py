@@ -434,14 +434,28 @@ def job_runner(job_id, track_id):
     entry['original_line']=lines[entry['line']-1]['text']
    content='## Lignes '+str(start+1)+'–'+str(stop)+'/'+str(len(lines))+'\n'+json.dumps(result,ensure_ascii=False,indent=2)
    with conn() as c:
+    c.execute('BEGIN IMMEDIATE')
     if not c.execute("SELECT id FROM jobs WHERE id=? AND status='running'",(job_id,)).fetchone():return
+    current=c.execute('SELECT lyrics FROM tracks WHERE id=?',(track_id,)).fetchone()
+    if current is None:raise ValueError('Morceau supprimé pendant le décodage.')
+    if current['lyrics']!=t['lyrics']:
+     c.execute("UPDATE jobs SET status='pending',progress=0,step='Paroles modifiées · reprise avec le texte actuel',updated=CURRENT_TIMESTAMP WHERE id=?",(job_id,))
+     return
     # Keep every existing report, including an earlier revision of these lyrics.
     # A stale or misdirected checkpoint must never rewrite another analysis.
     aid=c.execute('INSERT INTO analyses(track_id,kind,content,model) VALUES(?,?,?,?)',(track_id,'lyric_decoder_lines',content,MODEL)).lastrowid
     c.execute('INSERT INTO job_segments(job_id,segment_index,fingerprint,analysis_id) VALUES(?,?,?,?) ON CONFLICT(job_id,segment_index) DO UPDATE SET fingerprint=excluded.fingerprint,analysis_id=excluded.analysis_id',(job_id,idx,fp,aid))
    update(progress=int(90*stop/len(lines)),step=f'{stop}/{len(lines)} lignes examinées et sauvegardées')
-  if not rows("SELECT id FROM jobs WHERE id=? AND status='running'",(job_id,)):return
-  update(status='done',progress=100,step=f'{len(lines)}/{len(lines)} lignes traitées · Toutes les analyses sauvegardées')
+  with conn() as c:
+   c.execute('BEGIN IMMEDIATE')
+   if not c.execute("SELECT id FROM jobs WHERE id=? AND status='running'",(job_id,)).fetchone():return
+   current=c.execute('SELECT lyrics FROM tracks WHERE id=?',(track_id,)).fetchone()
+   if current is None:raise ValueError('Morceau supprimé pendant le décodage.')
+   if current['lyrics']!=t['lyrics']:
+    c.execute("UPDATE jobs SET status='pending',progress=0,step='Paroles modifiées · reprise avec le texte actuel',updated=CURRENT_TIMESTAMP WHERE id=?",(job_id,))
+   else:
+    c.execute("UPDATE jobs SET status='done',progress=100,step=?,updated=CURRENT_TIMESTAMP WHERE id=?",
+     (f'{len(lines)}/{len(lines)} lignes traitées · Toutes les analyses sauvegardées',job_id))
  except Exception as e:
   if rows("SELECT id FROM jobs WHERE id=? AND status='running'",(job_id,)):
    logging.exception('Décodage %s échoué',job_id)

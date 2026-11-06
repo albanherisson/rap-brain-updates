@@ -272,5 +272,22 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual('Historical analysis',
    self.server.rows('SELECT content FROM analyses WHERE id=?',(aid,))[0]['content'])
 
+ def test_lyrics_edited_during_decoding_requeues_current_text(self):
+  replacement=self.lyrics.replace('Cold rain','Warm rain')
+  observed=[]
+  def model(messages,**kwargs):
+   observed.append(messages[0]['content'])
+   if len(observed)==1:
+    with self.server.conn() as c:
+     c.execute('UPDATE tracks SET lyrics=? WHERE id=?',(replacement,self.track))
+   return self.make_output(messages)
+  self.server.call_ollama=model
+  self.assertEqual('pending',self.run_job()['status'])
+  self.assertEqual([],self.server.rows('SELECT id FROM analyses'))
+  self.assertEqual('done',self.run_job()['status'])
+  saved=json.loads(self.server.rows('SELECT content FROM analyses')[0]['content'].split('\n',1)[1])
+  self.assertEqual(replacement.splitlines(),[entry['original_line'] for entry in saved])
+  self.assertEqual(2,len(observed))
+
 
 if __name__=='__main__':unittest.main()
