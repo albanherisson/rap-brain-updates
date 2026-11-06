@@ -329,7 +329,18 @@ def parse_batch(text, expected):
   if any(k not in item for k in required):continue
   if not all(isinstance(item[k],list) for k in ('slang','wordplay','rhymes','references','techniques')):continue
   if not all(isinstance(item[k],str) for k in ('intention','writing_lesson')):continue
-  if not item['writing_lesson'].strip():continue
+  if not item['intention'].strip() or not item['writing_lesson'].strip():continue
+  def nonblank(value):return isinstance(value,str) and bool(value.strip())
+  if any(not isinstance(x,dict) or not all(nonblank(x.get(k)) for k in ('expression','meaning','register')) for x in item['slang']):continue
+  if any(not isinstance(x,dict) or not all(nonblank(x.get(k)) for k in ('expression','mechanism'))
+         or x.get('evidence') not in ('textual','plausible','speculative')
+         or not isinstance(x.get('readings'),list) or len(x['readings'])<2
+         or any(not nonblank(reading) for reading in x['readings']) for x in item['wordplay']):continue
+  if any(not isinstance(x,dict) or not all(nonblank(x.get(k)) for k in ('name','explanation'))
+         or x.get('verification') not in ('unverified','textual') for x in item['references']):continue
+  if any(not nonblank(x) for x in item['techniques']):continue
+  if any(not (nonblank(x) or (isinstance(x,dict) and
+         (nonblank(x.get('words')) or nonblank(x.get('expression'))))) for x in item['rhymes']):continue
   item['confidence']=item.get('confidence') if item.get('confidence') in ('textual','plausible','speculative') else 'speculative'
   found[n]=item
  missing=set(expected)-set(found)
@@ -382,7 +393,10 @@ def job_runner(job_id, track_id):
     if not rows("SELECT id FROM jobs WHERE id=? AND status='running'",(job_id,)):return
     if attempt:update(step=f'Lignes {start+1}–{stop}/{len(lines)} · essai {attempt+1}/3')
     try:
-     output=call_ollama([{'role':'user','content':decoder_prompt(t,lines,start,stop)}],predict=2300,timeout=480 if '27b' in MODEL.lower() else 240)
+     prompt=decoder_prompt(t,lines,start,stop)
+     if isinstance(batch_error,ValueError):
+      prompt='Your previous response had missing lines or invalid nested fields. Return the exact JSON schema for every TARGET line; use [] when no grounded slang, wordplay, rhymes or references exist. '+prompt
+     output=call_ollama([{'role':'user','content':prompt}],predict=2300,timeout=480 if '27b' in MODEL.lower() else 240)
      result=parse_batch(output,expected)
      break
     except (ValueError,RuntimeError,TimeoutError,urllib.error.URLError,ConnectionError,OSError,socket.timeout) as e:
@@ -399,7 +413,10 @@ def job_runner(job_id, track_id):
      for attempt in range(3):
       if not rows("SELECT id FROM jobs WHERE id=? AND status='running'",(job_id,)):return
       try:
-       output=call_ollama([{'role':'user','content':decoder_prompt(t,lines,line_start,line_start+1)}],predict=1200,timeout=480 if '27b' in MODEL.lower() else 240)
+       prompt=decoder_prompt(t,lines,line_start,line_start+1)
+       if isinstance(last_error,ValueError):
+        prompt='Your previous response did not match the JSON schema. Return one complete TARGET line with well-formed nested fields; use [] when a device is not grounded. '+prompt
+       output=call_ollama([{'role':'user','content':prompt}],predict=1200,timeout=480 if '27b' in MODEL.lower() else 240)
        line_result=parse_batch(output,[lines[line_start]['index']])[0]
        break
       except (ValueError,RuntimeError,TimeoutError,urllib.error.URLError,ConnectionError,OSError,socket.timeout) as e:

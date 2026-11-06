@@ -159,5 +159,60 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual([1,2,3],[x['line'] for x in entries])
   self.assertEqual(self.lyrics.splitlines(),[x['original_line'] for x in entries])
 
+ def test_nested_lexical_claims_are_well_formed_before_saving(self):
+  attempts=[]
+  def model(messages,**kwargs):
+   attempts.append(messages[0]['content'])
+   obj=json.loads(self.make_output(messages))
+   if len(attempts)==1:
+    obj['lines'][0]['slang']=['invented string, not a definition']
+   else:
+    obj['lines'][0]['slang']=[{'expression':'Silver train','meaning':'Image de voyage',
+      'register':'langage courant'}]
+   return json.dumps(obj)
+  self.server.call_ollama=model
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,len(attempts))
+  self.assertIn('invalid nested fields',attempts[1])
+  report=self.server.rows('SELECT content FROM analyses')[0]['content']
+  line=json.loads(report.split('\n',1)[1])[0]
+  self.assertEqual('Silver train',line['slang'][0]['expression'])
+
+ def test_malformed_nested_claims_never_complete_a_job(self):
+  def model(messages,**kwargs):
+   obj=json.loads(self.make_output(messages))
+   obj['lines'][0]['wordplay']=[{'expression':'train','mechanism':'vague'}]
+   return json.dumps(obj)
+  self.server.call_ollama=model
+  self.assertEqual('error',self.run_job()['status'])
+  self.assertEqual([],self.server.rows('SELECT id FROM analyses'))
+  self.assertEqual([],self.server.rows('SELECT job_id FROM job_segments'))
+
+ def test_legacy_checkpoint_with_bad_nested_fields_is_preserved_and_repaired(self):
+  self.assertEqual('done',self.run_job()['status'])
+  old=self.server.rows('SELECT id,content FROM analyses')[0]
+  heading,body=old['content'].split('\n',1)
+  legacy=json.loads(body)
+  legacy[0]['references']=[{'name':'Unattributed place'}]
+  damaged=heading+'\n'+json.dumps(legacy)
+  with self.server.conn() as c:
+   c.execute('UPDATE analyses SET content=? WHERE id=?',(damaged,old['id']))
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,self.calls)
+  self.assertEqual(damaged,self.server.rows('SELECT content FROM analyses WHERE id=?',(old['id'],))[0]['content'])
+  self.assertEqual(2,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_long_synthetic_song_keeps_every_original_line(self):
+  lines=[f'Invented bar {n} about a silver train under the city lights' for n in range(1,104)]
+  with self.server.conn() as c:c.execute('UPDATE tracks SET lyrics=? WHERE id=?',('\n'.join(lines),self.track))
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(35,self.calls)
+  self.assertEqual(35,len(self.server.rows('SELECT job_id FROM job_segments')))
+  reports=self.server.rows('SELECT content FROM analyses ORDER BY id')
+  recovered=[entry for report in reports for entry in json.loads(report['content'].split('\n',1)[1])]
+  self.assertEqual(list(range(1,104)),[entry['line'] for entry in recovered])
+  self.assertEqual(lines,[entry['original_line'] for entry in recovered])
+
 
 if __name__=='__main__':unittest.main()
