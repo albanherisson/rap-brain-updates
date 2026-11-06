@@ -253,6 +253,23 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual('cold rain',found['entries'][0]['phrase'])
   self.assertEqual(found,self.server.lexicon_entries('cold rain','expressions'))
 
+ def test_malformed_legacy_lexical_fields_do_not_poison_healthy_entries(self):
+  legacy=[{'line':1,'wordplay':[
+    {'expression':'paper moon','mechanism':'image','readings':['paper','moon'],
+     'evidence':['invalid confidence']},
+    {'expression':['not a phrase'],'mechanism':'invalid term','readings':[]}],
+    'rhymes':[{'words':['invalid phrase'],'hint':'do not index'}],
+    'references':[{'name':{'bad':'name'},'explanation':'not a reference'}]},
+   {'line':2,'slang':[{'expression':'cold rain','meaning':'Image de pluie froide',
+     'register':'courant'}]}]
+  with self.server.conn() as c:
+   c.execute('INSERT INTO analyses(track_id,kind,content) VALUES(?,?,?)',
+    (self.track,'lyric_decoder_lines','## Lignes 1–2/3\n'+json.dumps(legacy)))
+  found=self.server.lexicon_entries('','all')['entries']
+  self.assertEqual(['cold rain','paper moon'],[entry['phrase'] for entry in found])
+  self.assertEqual('',found[1]['confidence'])
+  self.assertEqual(found,self.server.lexicon_entries('','all')['entries'])
+
  def test_blank_reimport_over_http_preserves_lyrics_and_analyses(self):
   with self.server.conn() as c:
    aid=c.execute('INSERT INTO analyses(track_id,kind,content) VALUES(?,?,?)',
