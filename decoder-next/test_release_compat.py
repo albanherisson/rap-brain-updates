@@ -1,15 +1,20 @@
 """Synthetic Manager release verifier gate for a server-only Decoder payload."""
 import base64
+import importlib.util
 import io
+import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
 import unittest
 import zipfile
+from unittest.mock import patch
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat, PrivateFormat, NoEncryption
 
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -17,6 +22,11 @@ sys.path.insert(0,str(ROOT/'manager-updater'))
 from creative_release import canonical, digest, Refused
 from manager_update_release import verify_archive, verify_manifest
 from manager_update_rehearsal import rehearse_on_copy
+
+spec=importlib.util.spec_from_file_location('mac_decoder_publisher',
+ Path(__file__).with_name('mac_sign_decoder_release.py'))
+publisher=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(publisher)
 
 SERVER=Path(__file__).with_name('server.py')
 BASELINE='e7947990aec65830375b5e5e5fb6241f0161ead56309c970a8cc7c0970e56f27'
@@ -92,6 +102,76 @@ class ServerOnlyReleaseCompatibility(unittest.TestCase):
    self.assertEqual(b'original synthetic launcher\n',launcher.read_bytes())
    self.assertEqual(b'synthetic SQLite placeholder; never opened',database.read_bytes())
    self.assertEqual(b'{"model":"synthetic"}',config.read_bytes())
+
+ def test_decoder_publisher_rehearses_copies_and_packages_server_only(self):
+  with tempfile.TemporaryDirectory(prefix='decoder-publisher-test-') as temp:
+   home=Path(temp)
+   source=home/'Downloads/rap-brain'
+   (source/'data').mkdir(parents=True)
+   original=b'synthetic installed server\n'
+   (source/'server.py').write_bytes(original)
+   database=source/'data/rapbrain.sqlite3'
+   config=source/'data/ollama_model.json'
+   database.write_bytes(b'untouched synthetic database')
+   config.write_bytes(b'{"model":"untouched"}')
+   app=home/'Downloads/RapBrainManager_App_Beta14/Rap Brain Manager Beta 14.app'
+   (app/'Contents/Resources').mkdir(parents=True)
+   (app/'Contents/Resources/launch_manager.py').write_bytes(b'synthetic app')
+   state=home/'Downloads/RapBrainManagerBackups/secure-update'
+   state.mkdir(parents=True)
+   (state/'manager-accepted.json').write_text('{"sequence":3}')
+   def runner(args,**kwargs):
+    if args[0]=='/usr/bin/ditto':shutil.copytree(args[1],args[2])
+    return subprocess.CompletedProcess(args,0)
+   rehearsal=lambda *args:publisher.rehearse_on_mac_copies(*args,runner=runner)
+   signer=lambda path,message:(self.public,self.key.sign(message))
+   with patch.object(publisher,'BASELINE_SHA256',digest(original)):
+    public_zip=publisher.prepare(home,self.payload,signer=signer,
+                                 rehearsal=rehearsal,now=int(time.time()))
+   with zipfile.ZipFile(io.BytesIO(public_zip)) as outer:
+    self.assertEqual(['manager-stable/manifest.json','manager-stable/update-4.zip'],
+                     outer.namelist())
+    manifest=verify_manifest(outer.read('manager-stable/manifest.json'),
+                             minimum_sequence=3,pinned_key=digest(self.public))
+    self.assertEqual(4,manifest['sequence'])
+    self.assertEqual([],manifest['data_migrations'])
+    self.assertEqual({'server.py':self.payload},
+                     verify_archive(outer.read('manager-stable/update-4.zip'),manifest))
+    self.assertNotIn(b'untouched synthetic database',public_zip)
+   self.assertEqual(original,(source/'server.py').read_bytes())
+   self.assertEqual(b'untouched synthetic database',database.read_bytes())
+   self.assertEqual(b'{"model":"untouched"}',config.read_bytes())
+   self.assertEqual(b'synthetic app',(app/'Contents/Resources/launch_manager.py').read_bytes())
+
+ def test_decoder_publisher_refuses_wrong_active_server_before_rehearsal(self):
+  with tempfile.TemporaryDirectory(prefix='decoder-publisher-refuse-') as temp:
+   home=Path(temp)
+   state=home/'Downloads/RapBrainManagerBackups/secure-update'
+   state.mkdir(parents=True)
+   (state/'manager-accepted.json').write_text('{"sequence":3}')
+   source=home/'Downloads/rap-brain'
+   source.mkdir(parents=True)
+   (source/'server.py').write_bytes(b'wrong baseline')
+   called=[]
+   with self.assertRaisesRegex(ValueError,'code_baseline_mismatch'):
+    publisher.prepare(home,self.payload,signer=lambda *args:called.append('sign'),
+                      rehearsal=lambda *args:called.append('rehearse'))
+   self.assertEqual([],called)
+
+ def test_decoder_publisher_requires_pinned_private_key_and_private_permissions(self):
+  with tempfile.TemporaryDirectory(prefix='decoder-key-test-') as temp:
+   key=Path(temp)/'publisher_ed25519.key'
+   key.write_bytes(self.key.private_bytes(Encoding.Raw,PrivateFormat.Raw,NoEncryption()))
+   key.chmod(0o600)
+   with self.assertRaisesRegex(ValueError,'publisher_identity_mismatch'):
+    publisher.sign(key,b'synthetic manifest')
+   with patch.object(publisher,'PUBLISHER_PIN',digest(self.public)):
+    public,signature=publisher.sign(key,b'synthetic manifest')
+    self.assertEqual(self.public,public)
+    self.key.public_key().verify(signature,b'synthetic manifest')
+    key.chmod(0o644)
+    with self.assertRaisesRegex(ValueError,'publisher_private_key_unsafe'):
+     publisher.sign(key,b'synthetic manifest')
 
 
 if __name__=='__main__':unittest.main()
