@@ -15,13 +15,13 @@ import urllib.request
 
 
 REPOSITORY = 'https://raw.githubusercontent.com/albanherisson/rap-brain-updates/'
-COMMIT = '6c158c2d51f94f6f82e09ab571dfdc8e02816639'
-CANDIDATE_SHA256 = '106caf29aa075d78f53726ff45fe18045933bb1de29dd9952e8e5085c3f1b893'
+COMMIT = '95873ad1a36160ff60d6324cdf4a05ffd13baf9f'
+CANDIDATE_SHA256 = 'b4d9f120ee5f2e1fedf4c1f73794bd4d3c3f4044bbd686d748b7cd3b94b89233'
 BASELINE_SHA256 = 'e7947990aec65830375b5e5e5fb6241f0161ead56309c970a8cc7c0970e56f27'
 SYNTHETIC_LYRICS = (
-    'I took the last train past a paper moon\n'
-    'My old map folds but the street stays new\n'
-    'I count each stop and write a different route'
+    'I lost my sole in Seoul; the rain soaked through my shoe\n'
+    'The last train leaves at seven past ten\n'
+    'I fold the map and take the road back home'
 )
 
 
