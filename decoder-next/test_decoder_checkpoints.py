@@ -17,8 +17,12 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.tmp = tempfile.TemporaryDirectory(prefix='rapbrain-decoder-test-')
   self.addCleanup(self.tmp.cleanup)
   self.old_data = os.environ.get('RAP_BRAIN_DATA')
+  self.old_home = os.environ.get('HOME')
   os.environ['RAP_BRAIN_DATA'] = self.tmp.name
+  os.environ['HOME'] = self.tmp.name
   self.addCleanup(self.restore_environment)
+  self.guard_state=Path(self.tmp.name)/'Downloads/RapBrainManagerBackups/secure-update'
+  self.guard_state.mkdir(parents=True,mode=0o700)
   sys.path.insert(0,str(SERVER.parent))
   self.addCleanup(lambda: sys.path.remove(str(SERVER.parent)))
   # The decoder does not invoke the separate Creative Engine or RAG modules.
@@ -54,11 +58,11 @@ class DecoderCheckpointTests(unittest.TestCase):
  def restore_environment(self):
   if self.old_data is None:os.environ.pop('RAP_BRAIN_DATA',None)
   else:os.environ['RAP_BRAIN_DATA']=self.old_data
+  if self.old_home is None:os.environ.pop('HOME',None)
+  else:os.environ['HOME']=self.old_home
 
  def run_job(self):
-  # The macOS maintenance wrapper uses the real user's home directory; exercise
-  # its wrapped decoder function against only this synthetic database.
-  self.server._rb_original_job_runner_v1(self.job,self.track)
+  self.server.job_runner(self.job,self.track)
   return self.server.rows('SELECT status,error FROM jobs WHERE id=?',(self.job,))[0]
 
  def retry(self):
@@ -71,6 +75,13 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual('done',self.run_job()['status'])
   self.assertEqual(1,self.calls)
   self.assertEqual(1,len(self.server.rows('SELECT id FROM analyses')))
+
+ def test_maintenance_ticket_blocks_decoder_before_database_change(self):
+  (self.guard_state/'maintenance.ticket').write_text('synthetic ticket')
+  with self.assertRaisesRegex(RuntimeError,'maintenance_in_progress'):
+   self.run_job()
+  self.assertEqual('pending',self.server.rows('SELECT status FROM jobs WHERE id=?',(self.job,))[0]['status'])
+  self.assertEqual([],self.server.rows('SELECT id FROM analyses'))
 
  def test_missing_report_is_redecoded(self):
   self.assertEqual('done',self.run_job()['status'])

@@ -16,6 +16,8 @@ Previously cached Lexicon rows are not rebuilt in this candidate; a separate
 read-only inventory should precede any migration of derived index rows.
 The normal three-line prompt, Ollama settings, worker guard and HTTP routes
 remain in the copied server.
+The synthetic tests use a temporary home directory and run through the
+signed server's normal worker lock; a maintenance ticket blocks decoding.
 
 Run only on synthetic data:
 
