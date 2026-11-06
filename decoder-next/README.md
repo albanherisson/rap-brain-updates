@@ -13,6 +13,11 @@ represented by `[]`; the validator does not prove the truth of an inference.
 Artist/title metadata is serialized as untrusted JSON. Numbered target lyrics
 follow a separate marker after the quoted context, so a title or lyric that
 contains a lookalike target label cannot redefine the batch boundary.
+New reports also carry a per-claim `evidence_audit` showing whether a slang
+term, wordplay expression or reference name appears literally on the target
+line, in nearby lines, or nowhere in that local text. The audit does not
+reject or relabel homophones, indirect allusions or other model hypotheses;
+literal absence is a prompt for human review, not proof of an error.
 The Lexicon indexer skips damaged legacy fields and continues to index healthy
 lines from the same report. This does not change or erase existing reports.
 Previously cached Lexicon rows are not rebuilt in this candidate; a separate
