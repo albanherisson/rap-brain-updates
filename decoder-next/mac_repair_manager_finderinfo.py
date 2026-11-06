@@ -65,7 +65,8 @@ def fingerprint(app):
 
 
 def verify_signature(app):
-    return run(['/usr/bin/codesign', '--verify', '--deep', '--strict', str(app)])
+    return run(['/usr/bin/codesign', '--verify', '--deep', '--strict',
+                '--verbose=2', str(app)])
 
 
 def repair(home):
@@ -82,8 +83,9 @@ def repair(home):
     failure = verify_signature(app)
     if failure.returncode == 0:
         raise ValueError('app_signature_already_valid')
-    if b'Disallowed xattr com.apple.FinderInfo' not in failure.stderr:
-        raise ValueError('signature_failure_not_only_finderinfo')
+    if b'Disallowed xattr com.apple.FinderInfo' not in failure.stderr + failure.stdout:
+        detail = (failure.stderr + failure.stdout).decode(errors='replace')[-350:]
+        raise ValueError('signature_failure_not_only_finderinfo: ' + detail)
     repair_root = backup_root / 'signature-repairs'
     if repair_root.is_symlink():
         raise ValueError('repair_backup_symlink_refused')
