@@ -214,5 +214,21 @@ class DecoderCheckpointTests(unittest.TestCase):
   self.assertEqual(list(range(1,104)),[entry['line'] for entry in recovered])
   self.assertEqual(lines,[entry['original_line'] for entry in recovered])
 
+ def test_corrupt_legacy_report_does_not_block_lexicon(self):
+  valid=[{'line':1,'original_line':self.lyrics.splitlines()[0],
+   'slang':None,'wordplay':None,'references':None,'rhymes':None,'techniques':None},
+   {'line':2,'original_line':self.lyrics.splitlines()[1],
+    'slang':[{'expression':'cold rain','meaning':'Image de la pluie froide','register':'courant'}],
+    'wordplay':None,'references':None,'rhymes':None,'techniques':None}]
+  with self.server.conn() as c:
+   c.execute('INSERT INTO analyses(track_id,kind,content) VALUES(?,?,?)',
+    (self.track,'lyric_decoder_lines','## Lignes 1–1/3\n42'))
+   c.execute('INSERT INTO analyses(track_id,kind,content) VALUES(?,?,?)',
+    (self.track,'lyric_decoder_lines','## Lignes 1–2/3\n'+json.dumps(valid)))
+  found=self.server.lexicon_entries('cold rain','expressions')
+  self.assertEqual(1,len(found['entries']))
+  self.assertEqual('cold rain',found['entries'][0]['phrase'])
+  self.assertEqual(found,self.server.lexicon_entries('cold rain','expressions'))
+
 
 if __name__=='__main__':unittest.main()

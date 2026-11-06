@@ -143,17 +143,22 @@ def _lexical_items(line):
  def add(category,phrase,detail,confidence=''):
   phrase=str(phrase or '').strip()[:200]; detail=str(detail or '').strip()[:650]
   if phrase and detail:out.append((no,category,phrase,detail,confidence))
- for obj in line.get('slang',[]):
-  if isinstance(obj,dict):add('slang',obj.get('expression'),str(obj.get('meaning',''))+' · '+str(obj.get('register','')))
- for obj in line.get('wordplay',[]):
-  if isinstance(obj,dict):add('wordplay',obj.get('expression'),str(obj.get('mechanism',''))+' · '+', '.join(map(str,obj.get('readings',[]) if isinstance(obj.get('readings'),list) else [])),obj.get('evidence',''))
- for obj in line.get('rhymes',[]):
+ for obj in line.get('slang',[]) if isinstance(line.get('slang'),list) else []:
+  if isinstance(obj,dict) and isinstance(obj.get('meaning'),str) and obj['meaning'].strip():
+   register=obj.get('register') if isinstance(obj.get('register'),str) else ''
+   add('slang',obj.get('expression'),obj['meaning']+' · '+register)
+ for obj in line.get('wordplay',[]) if isinstance(line.get('wordplay'),list) else []:
+  if isinstance(obj,dict) and isinstance(obj.get('mechanism'),str) and obj['mechanism'].strip():
+   readings=obj.get('readings',[]) if isinstance(obj.get('readings'),list) else []
+   add('wordplay',obj.get('expression'),obj['mechanism']+' · '+', '.join(x for x in readings if isinstance(x,str)),obj.get('evidence',''))
+ for obj in line.get('rhymes',[]) if isinstance(line.get('rhymes'),list) else []:
   if isinstance(obj,str):add('rhyme','rhyme/assonance',obj)
   elif isinstance(obj,dict):add('rhyme',obj.get('words') or obj.get('expression') or 'rhyme',json.dumps(obj,ensure_ascii=False))
- for obj in line.get('techniques',[]):
+ for obj in line.get('techniques',[]) if isinstance(line.get('techniques'),list) else []:
   if isinstance(obj,str):add('technique',obj,line.get('writing_lesson',''))
- for obj in line.get('references',[]):
-  if isinstance(obj,dict):add('reference',obj.get('name'),obj.get('explanation',''),obj.get('verification',''))
+ for obj in line.get('references',[]) if isinstance(line.get('references'),list) else []:
+  if isinstance(obj,dict) and isinstance(obj.get('explanation'),str):
+   add('reference',obj.get('name'),obj['explanation'],obj.get('verification',''))
  return out
 
 def sync_lexical_index():
@@ -168,13 +173,13 @@ def sync_lexical_index():
    try:
     raw=a['content']; raw=raw[raw.index('\n')+1:] if raw.startswith('## Lignes ') else raw
     payload=json.loads(raw)
-    entries=payload if isinstance(payload,list) else payload.get('lines',[])
+    entries=payload if isinstance(payload,list) else (payload.get('lines',[]) if isinstance(payload,dict) else [])
     if isinstance(entries,list):
      for entry in entries:
       if not isinstance(entry,dict):continue
       for n,category,phrase,detail,confidence in _lexical_items(entry):
        c.execute('INSERT OR IGNORE INTO lexical_entries (analysis_id,track_id,line_no,category,phrase,detail,confidence) VALUES(?,?,?,?,?,?,?)',(a['id'],a['track_id'],n,category,phrase,detail,confidence))
-   except (ValueError,TypeError,KeyError):pass
+   except (ValueError,TypeError,KeyError,AttributeError):pass
    c.execute('INSERT OR REPLACE INTO lexical_indexed (analysis_id,digest) VALUES(?,?)',(a['id'],fingerprint))
   c.execute('DELETE FROM lexical_entries WHERE analysis_id NOT IN (SELECT id FROM analyses)')
   c.execute('DELETE FROM lexical_indexed WHERE analysis_id NOT IN (SELECT id FROM analyses)')

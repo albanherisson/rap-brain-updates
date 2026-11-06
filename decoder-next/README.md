@@ -10,6 +10,10 @@ It also refuses malformed structured claims (slang, wordplay, references,
 rhyme cues), prompts Ollama to repair its JSON on retry, and keeps the
 existing line-by-line fallback for incomplete batches. An empty category is
 represented by `[]`; the validator does not prove the truth of an inference.
+The Lexicon indexer skips damaged legacy fields and continues to index healthy
+lines from the same report. This does not change or erase existing reports.
+Previously cached Lexicon rows are not rebuilt in this candidate; a separate
+read-only inventory should precede any migration of derived index rows.
 The normal three-line prompt, Ollama settings, worker guard and HTTP routes
 remain in the copied server.
 
