@@ -22,6 +22,7 @@ The normal three-line prompt, Ollama settings, worker guard and HTTP routes
 remain in the copied server.
 The synthetic tests use a temporary home directory and run through the
 signed server's normal worker lock; a maintenance ticket blocks decoding.
+The signed runtime guard suffix is checked byte-for-byte against its baseline.
 
 Run only on synthetic data:
 

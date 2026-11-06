@@ -18,6 +18,13 @@ SERVER = Path(__file__).with_name('server.py')
 
 
 class DecoderCheckpointTests(unittest.TestCase):
+ def test_signed_runtime_guards_remain_byte_identical(self):
+  marker=b'# Rap Brain maintenance HTTP admission gate v3.'
+  suffix=SERVER.read_bytes().split(marker,1)
+  self.assertEqual(2,len(suffix))
+  self.assertEqual('a350f10272a3c58dc5d1e6f26640f9df8470f5ef9b493f641f966f895f90f7ce',
+   hashlib.sha256(suffix[1]).hexdigest())
+
  def setUp(self):
   self.tmp = tempfile.TemporaryDirectory(prefix='rapbrain-decoder-test-')
   self.addCleanup(self.tmp.cleanup)
@@ -291,6 +298,24 @@ class DecoderCheckpointTests(unittest.TestCase):
   saved=json.loads(self.server.rows('SELECT content FROM analyses')[0]['content'].split('\n',1)[1])
   self.assertEqual(replacement.splitlines(),[entry['original_line'] for entry in saved])
   self.assertEqual(2,len(observed))
+
+ def test_cancellation_during_model_call_keeps_finished_lines(self):
+  lines=[f'Invented late bar number {n} under city lights' for n in range(1,7)]
+  with self.server.conn() as c:c.execute('UPDATE tracks SET lyrics=? WHERE id=?',('\n'.join(lines),self.track))
+  calls=[]
+  def model(messages,**kwargs):
+   calls.append(messages[0]['content'])
+   if len(calls)==2:
+    with self.server.conn() as c:
+     c.execute("UPDATE jobs SET status='cancelled' WHERE id=?",(self.job,))
+   return self.make_output(messages)
+  self.server.call_ollama=model
+  self.assertEqual('cancelled',self.run_job()['status'])
+  self.assertEqual(1,len(self.server.rows('SELECT id FROM analyses')))
+  self.assertEqual(1,len(self.server.rows('SELECT job_id FROM job_segments')))
+  self.retry()
+  self.assertEqual('done',self.run_job()['status'])
+  self.assertEqual(2,len(self.server.rows('SELECT id FROM analyses')))
 
  def test_isolated_ollama_probe_uses_only_synthetic_lyrics(self):
   probe_file=SERVER.with_name('mac_isolated_ollama_probe.py')
