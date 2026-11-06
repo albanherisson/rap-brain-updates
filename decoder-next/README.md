@@ -24,11 +24,16 @@ The synthetic tests use a temporary home directory and run through the
 signed server's normal worker lock; a maintenance ticket blocks decoding.
 The signed runtime guard suffix is checked byte-for-byte against its baseline.
 
-Run only on synthetic data:
+Run the repository's self-contained synthetic suite:
 
 ```sh
-python3 -B -m unittest discover -s decoder-next -p 'test_*.py' -v
+python3 -B -m unittest -v decoder-next/test_decoder_checkpoints.py
 ```
+
+The separate `test_release_compat.py` requires the Manager's internal source
+modules and `cryptography`. They are available in the local development
+workspace but are not currently committed to this public repository. Its
+three tests passed locally on copies; GitHub CI does not run them.
 
 No production installation or signed release is included. The Mac runtime,
 real Ollama output and release signing still require separate validation.
