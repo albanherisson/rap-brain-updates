@@ -106,7 +106,13 @@ def rehearse_on_copy(source, launcher, state, signed, archive, *, pinned_key=Non
                                           **opts).install(signed, archive)
             expected = 'committed' if scenario == 'commit' else 'rolled_back'
             if result.get('state') != expected:
-                raise Refused('manager_repair_rehearsal_' + scenario + '_failed')
+                # The transaction already rolled back the disposable copy.
+                # Carry its bounded reason to the preparer without paths,
+                # data, process details or exception traces.
+                reason = result.get('reason', 'unknown')
+                if type(reason) is not str or not reason.isascii() or not reason.replace('_', '').isalnum() or len(reason) > 80:
+                    reason = 'unknown'
+                raise Refused('manager_repair_rehearsal_' + scenario + '_' + reason)
             if scenario == 'rollback' and inventory(copy_app) != original:
                 raise Refused('manager_repair_rehearsal_rollback_changed')
             if scenario == 'commit':
