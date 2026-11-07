@@ -1,0 +1,28 @@
+name: Lyric Decoder candidate tests
+
+on:
+  pull_request:
+    paths:
+      - 'decoder-next/**'
+      - '.github/workflows/decoder-next-tests.yml'
+  push:
+    branches:
+      - decoder-checkpoint-safety
+    paths:
+      - 'decoder-next/**'
+      - '.github/workflows/decoder-next-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-decoder:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test synthetic Decoder and pinned probe
+        run: python3 -B -m unittest -v decoder-next/test_decoder_checkpoints.py
