@@ -201,7 +201,7 @@ def lexicon_entries(query='',group='words',limit=10000):
    'expressions': "AND instr(trim(e.phrase),' ')>0",
  }.get(group,'')
  entries=rows('''SELECT e.id,e.category,e.phrase,e.detail,e.confidence,e.line_no,
-   e.track_id,t.artist,t.title,t.album,a.created
+   e.track_id,e.analysis_id,t.artist,t.title,t.album,a.created
    FROM lexical_entries e JOIN tracks t ON t.id=e.track_id
    JOIN analyses a ON a.id=e.analysis_id
    WHERE e.category IN ('slang','wordplay','reference')
