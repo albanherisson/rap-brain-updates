@@ -25,8 +25,9 @@ SIGNED_REF = 'ec81423726d7fd53d85222e445d0df4b77cea702'
 PREVIOUS_MANIFEST_HASH = '2d99fcdbfb76fedae86b858ad0006c44696bbc45b780a9508b79ff63fbddc2d4'
 PREVIOUS_ARCHIVE_HASH = 'cb12ce263c943ad9fd1d5ac0d3f8d82517702f693292fb3a93755d9d57dbdd8d'
 MANAGER_ARCHIVE_HASH = 'ab41245a9a93351effc55130a9b5655de9a2b72971e50fc8b9e09c59593db04d'
-NEW_SOURCE = '097ed7cf79ec963d17fbd594adc977f9c182667c'
+NEW_SOURCE = '15638ef4c6c93f266c208e6ed9d20049b14d7a36'
 NEW_HASHES = {
+    'app_bundle_backup.py': '54a557d0f90fd74e1d832be12e27a980ae754e2160c5e0e0c5eb3122aed23fd2',
     'manager_locale_repair_candidate.py': 'a3e2771286abd02fadecb926ff17e2a42aff32f55785743076fa630fcff85945',
     'manager_repair_release.py': '88741e10b978cb0f855ca4d77074a665b637cf717b4ee2ef4e8c33003e5841fc',
     'manager_repair_transaction.py': '1782b40ff4323bfa69da0719ce0aa77af791a28ae0a458f19483e735821148df',
@@ -165,6 +166,11 @@ def prepare(home, *, fetch=download):
         new_members = dict(old_members)
         new_members['process_start_identity.py'] = prepare_identity(
             old_members['process_start_identity.py'])
+        # The live app has Finder's root Icon\r entry. Both the installer and
+        # the staged helper must accept exactly that backed-up root entry.
+        if digest(old_members['app_bundle_backup.py']) != pins['app_bundle_backup.py']:
+            raise ValueError('old_app_backup_changed')
+        new_members['app_bundle_backup.py'] = (root / 'app_bundle_backup.py').read_bytes()
         helper_zip = packed({'helper/' + name: new_members[name]
                              for name in HELPER_FILES})
         files = {'app/RapBrainManagerNative.swift': native,
