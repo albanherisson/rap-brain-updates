@@ -54,7 +54,8 @@ def fingerprint(app):
             raise ValueError('app_special_file_refused')
         files[str(path.relative_to(app))] = (
             hashlib.sha256(path.read_bytes()).hexdigest(), stat.S_IMODE(mode))
-    if 'Icon' not in files or 'Contents/Resources/launch_manager.py' not in files:
+    if (not any(name in files for name in ('Icon', 'Icon\r')) or
+            'Contents/Resources/launch_manager.py' not in files):
         raise ValueError('app_incomplete')
     return files
 
@@ -89,7 +90,11 @@ def repair(home):
         raise ValueError('macos_required')
     home = Path(home).absolute()
     app = home / APP_RELATIVE
-    icon = app / 'Icon'
+    icons = [app / name for name in ('Icon', 'Icon\r')
+             if (app / name).exists() or (app / name).is_symlink()]
+    if len(icons) != 1:
+        raise ValueError('finder_icon_path_ambiguous')
+    icon = icons[0]
     backup_root = home / 'Downloads/RapBrainManagerBackups'
     state = backup_root / 'secure-update'
     if (any(path.is_symlink() for path in (app, icon, backup_root, state)) or
@@ -115,7 +120,7 @@ def repair(home):
     folder.mkdir(mode=0o700)
     saved = folder / 'original.app'
     checked(['/usr/bin/ditto', str(app), str(saved)])
-    if fingerprint(saved) != before or fork(saved / 'Icon') != original_fork:
+    if fingerprint(saved) != before or fork(saved / icon.name) != original_fork:
         raise ValueError('app_backup_mismatch')
     signature(saved)
 
@@ -123,10 +128,10 @@ def repair(home):
         root = Path(temp)
         trial = root / 'trial.app'
         checked(['/usr/bin/ditto', str(saved), str(trial)])
-        if fingerprint(trial) != before or fork(trial / 'Icon') != original_fork:
+        if fingerprint(trial) != before or fork(trial / icon.name) != original_fork:
             raise ValueError('app_trial_copy_mismatch')
-        checked(['/usr/bin/xattr', '-d', ATTRIBUTE, str(trial / 'Icon')])
-        assert_no_fork(trial / 'Icon')
+        checked(['/usr/bin/xattr', '-d', ATTRIBUTE, str(trial / icon.name)])
+        assert_no_fork(trial / icon.name)
         if fingerprint(trial) != before:
             raise ValueError('app_code_changed_on_copy')
         signature(trial)
@@ -136,8 +141,8 @@ def repair(home):
         save_app_backup(trial, drill)
         inventory(trial)
         # Rehearse restoration of the original icon, including its large fork.
-        checked(['/usr/bin/ditto', str(saved / 'Icon'), str(trial / 'Icon')])
-        if fingerprint(trial) != before or fork(trial / 'Icon') != original_fork:
+        checked(['/usr/bin/ditto', str(saved / icon.name), str(trial / icon.name)])
+        if fingerprint(trial) != before or fork(trial / icon.name) != original_fork:
             raise ValueError('icon_fork_restore_drill_failed')
         signature(trial)
 
@@ -152,7 +157,7 @@ def repair(home):
         signature(app)
         inventory(app)
     except Exception:
-        checked(['/usr/bin/ditto', str(saved / 'Icon'), str(icon)])
+        checked(['/usr/bin/ditto', str(saved / icon.name), str(icon)])
         if fingerprint(app) != before or fork(icon) != original_fork:
             raise ValueError('active_icon_restore_failed')
         signature(app)

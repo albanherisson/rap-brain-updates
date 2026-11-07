@@ -17,9 +17,10 @@ class IconRepairTest(unittest.TestCase):
         self.app = self.home / repair.APP_RELATIVE
         (self.app / 'Contents/Resources').mkdir(parents=True)
         (self.app / 'Contents/Resources/launch_manager.py').write_bytes(b'# unchanged\n')
-        (self.app / 'Icon').write_bytes(b'')
+        self.icon_name = 'Icon\r'  # Finder's invisible custom-icon suffix on macOS.
+        (self.app / self.icon_name).write_bytes(b'')
         (self.home / 'Downloads/RapBrainManagerBackups/secure-update').mkdir(parents=True)
-        self.forks = {str(self.app / 'Icon'): b'R' * 400_000}
+        self.forks = {str(self.app / self.icon_name): b'R' * 400_000}
         self.original = repair.fingerprint(self.app)
 
     def fake_run(self, argv, **_kwargs):
@@ -30,7 +31,8 @@ class IconRepairTest(unittest.TestCase):
             source, destination = Path(argv[-2]), Path(argv[-1])
             if source.is_dir():
                 shutil.copytree(source, destination)
-                old, new = str(source / 'Icon'), str(destination / 'Icon')
+                old, new = (str(source / self.icon_name),
+                            str(destination / self.icon_name))
             else:
                 shutil.copy2(source, destination)
                 old, new = str(source), str(destination)
@@ -55,10 +57,10 @@ class IconRepairTest(unittest.TestCase):
         def backup(app, folder):
             if fail:
                 raise ValueError('copy_drill_failed')
-            self.assertNotIn(str(app / 'Icon'), self.forks)
+            self.assertNotIn(str(app / self.icon_name), self.forks)
             self.assertEqual(repair.fingerprint(app), self.original)
         def inventory(app):
-            self.assertNotIn(str(app / 'Icon'), self.forks)
+            self.assertNotIn(str(app / self.icon_name), self.forks)
             return repair.fingerprint(app)
         return backup, inventory
 
@@ -70,8 +72,8 @@ class IconRepairTest(unittest.TestCase):
             result = repair.repair(self.home)
         self.assertEqual(result['state'], 'repaired')
         self.assertEqual(repair.fingerprint(self.app), self.original)
-        self.assertNotIn(str(self.app / 'Icon'), self.forks)
-        self.assertEqual(self.forks[str(Path(result['backup']) / 'original.app/Icon')],
+        self.assertNotIn(str(self.app / self.icon_name), self.forks)
+        self.assertEqual(self.forks[str(Path(result['backup']) / 'original.app' / self.icon_name)],
                          b'R' * 400_000)
 
     def test_copy_drill_failure_preserves_active_icon_fork(self):
@@ -81,7 +83,7 @@ class IconRepairTest(unittest.TestCase):
                            side_effect=lambda a, s: self.fake_signed_backup_module(a, s, fail=True))):
             with self.assertRaisesRegex(ValueError, 'copy_drill_failed'):
                 repair.repair(self.home)
-        self.assertEqual(self.forks[str(self.app / 'Icon')], b'R' * 400_000)
+        self.assertEqual(self.forks[str(self.app / self.icon_name)], b'R' * 400_000)
         self.assertEqual(repair.fingerprint(self.app), self.original)
 
 
