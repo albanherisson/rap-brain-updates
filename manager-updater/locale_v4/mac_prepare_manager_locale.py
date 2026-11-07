@@ -25,12 +25,12 @@ SIGNED_REF = 'ec81423726d7fd53d85222e445d0df4b77cea702'
 PREVIOUS_MANIFEST_HASH = '2d99fcdbfb76fedae86b858ad0006c44696bbc45b780a9508b79ff63fbddc2d4'
 PREVIOUS_ARCHIVE_HASH = 'cb12ce263c943ad9fd1d5ac0d3f8d82517702f693292fb3a93755d9d57dbdd8d'
 MANAGER_ARCHIVE_HASH = 'ab41245a9a93351effc55130a9b5655de9a2b72971e50fc8b9e09c59593db04d'
-NEW_SOURCE = '29612bd6431b87966968b443677d3c0db11b2501'
+NEW_SOURCE = '097ed7cf79ec963d17fbd594adc977f9c182667c'
 NEW_HASHES = {
     'manager_locale_repair_candidate.py': 'a3e2771286abd02fadecb926ff17e2a42aff32f55785743076fa630fcff85945',
     'manager_repair_release.py': '88741e10b978cb0f855ca4d77074a665b637cf717b4ee2ef4e8c33003e5841fc',
     'manager_repair_transaction.py': '1782b40ff4323bfa69da0719ce0aa77af791a28ae0a458f19483e735821148df',
-    'manager_repair_rehearsal.py': '6951e232138898d6cc51e5e04c68b68e193b8760d65e900ccc1ad4245e19f647',
+    'manager_repair_rehearsal.py': '1b85052718ebb1291c2c3f122a645fcb9cf1d2553ea77faab9b344d64f71a8dd',
     'manager_repair_installer.py': 'e21ad27db6eece4c9bce3441fba19d766e3beee7b53d67c13197c70e75954f38',
     'build_manager_repair_app.py': 'cb3f2237d58557612996298c86c690e2543ed77f87490b49ceef53f405263379',
 }
