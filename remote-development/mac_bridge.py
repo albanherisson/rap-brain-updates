@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.request
 
 from mac_preflight import inspect
+from mac_private_source_trial import keychain_token as private_keychain_token, trial as private_trial
 from pathlib import Path
 
 
@@ -97,7 +98,7 @@ def read_task(task_id, get=request):
         raise ValueError("JSON de tâche invalide") from None
     if not isinstance(task, dict) or set(task) != {"schema", "id", "action", "expected_server_sha256"}:
         raise ValueError("Structure de tâche invalide")
-    if task["schema"] != "rapbrain-remote-task-v1" or task["id"] != task_id or task["action"] != "health_check":
+    if task["schema"] != "rapbrain-remote-task-v1" or task["id"] != task_id or task["action"] not in ("health_check", "private_source_trial"):
         raise ValueError("Action non autorisée")
     expected = task["expected_server_sha256"]
     if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
@@ -105,11 +106,11 @@ def read_task(task_id, get=request):
     return task, hashlib.sha256(raw).hexdigest()
 
 
-def run(task, task_sha, probe=inspect):
+def run(task, task_sha, probe=inspect, private_probe=private_trial, private_token=private_keychain_token):
     info = probe()
     if info["platform"] != "Darwin":
         raise ValueError("Exécution réservée à macOS")
-    return {
+    result = {
         "schema": "rapbrain-remote-result-v1",
         "id": task["id"],
         "task_sha256": task_sha,
@@ -120,6 +121,16 @@ def run(task, task_sha, probe=inspect):
         "git_available": info["git_available"],
         "ollama_available": info["ollama_available"],
     }
+    if task["action"] == "private_source_trial" and result["status"] == "pass":
+        private_result = private_probe(private_token())
+        if (private_result.get("schema") != "rapbrain-private-source-trial-v1" or
+                private_result.get("status") != "pass" or
+                private_result.get("temporary_copy_removed") is not True):
+            raise RuntimeError("Essai privé incomplet : aucun résultat publié")
+        result["private_source"] = {key: private_result[key] for key in
+                                    ("source_commit", "files_verified", "python_syntax_verified",
+                                     "bytes_verified", "temporary_copy_removed")}
+    return result
 
 
 def publish(task_id, result, token, get=request):
