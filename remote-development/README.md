@@ -82,3 +82,17 @@ Le dépôt `rap-brain-source` a été créé en privé avec des exclusions initi
 ### Revue du premier paquet
 
 Le premier paquet produit avant correction contenait 31 fichiers, dont neuf instantanés sous `rap_brain/sauvegardes`. Aucun de ces neuf fichiers n'a été importé. Les 22 fichiers de l'installation active ont été vérifiés et placés sur une branche de revue du dépôt privé (`p0/import-active-source`, PR #1). Le script de préparation exclut désormais aussi le dossier français `sauvegardes`. L'agent de veille reste limité au contrôle de santé ; l'import de code ne déclenche aucune installation locale.
+
+## Essai de lecture du code privé (sans installation)
+
+`mac_private_source_trial.py` lit le manifeste du dépôt privé à l'empreinte `31236459f934145cc20b7274beeaf910c318cee0639325e7496021b0fa3233c7` et le commit `629b95df0cf28e21db941b82a823561d388eac67`. Il exige un jeton fine-grained distinct, limité au seul dépôt privé avec Contents **Read-only**, stocké dans le trousseau sous `com.gns.rapbrain.source.readonly.p0`. Il télécharge les 22 sources dans un dossier temporaire du pont, vérifie leurs tailles et SHA-256, analyse la syntaxe Python sans importer les modules, puis supprime le dossier. Le résultat ne contient ni code, ni données utilisateur, ni jeton. Il n'utilise pas la veille installée et ne modifie pas l'application ou le Manager.
+
+Après création du jeton en lecture seule, le saisir uniquement dans l'invite masquée du Terminal :
+
+```bash
+security add-generic-password -a albanherisson -s com.gns.rapbrain.source.readonly.p0 -l "Rap Brain Source Read Only P0" -w
+python3 mac_private_source_trial.py --check-keychain
+python3 mac_private_source_trial.py --run
+```
+
+Cet essai reste ponctuel. L'automatisation des tâches sur une copie isolée nécessitera encore une mise à niveau contrôlée de l'agent, une liste d'opérations autorisées et une vérification de retour arrière.
