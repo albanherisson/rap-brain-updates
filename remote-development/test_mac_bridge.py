@@ -32,6 +32,31 @@ class BridgeTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "déjà publié"):
             publish("pilot-001", {}, "token", get=lambda url, **kwargs: {"type": "file"})
 
+    def test_private_trial_requires_local_token_and_reports_only_counts(self):
+        task = {**TASK, "action": "private_source_trial"}
+        parsed, sha = read_task("pilot-001", get=lambda url: item(task))
+        probe = lambda: {"platform": "Darwin", "server_sha256": "a" * 64,
+                         "app_present": True, "manager_present": True,
+                         "git_available": True, "ollama_available": True}
+        called = []
+        def fake_trial(token):
+            called.append(token)
+            return {"schema": "rapbrain-private-source-trial-v1", "status": "pass",
+                    "source_commit": "b" * 40, "files_verified": 22,
+                    "python_syntax_verified": 15, "bytes_verified": 374104,
+                    "temporary_copy_removed": True, "installed_app_untouched": True}
+        result = run(parsed, sha, probe=probe, private_probe=fake_trial,
+                     private_token=lambda: "private test token")
+        self.assertEqual(called, ["private test token"])
+        self.assertEqual(result["private_source"]["files_verified"], 22)
+        self.assertNotIn("private test token", str(result))
+        bad_probe = lambda: {**probe(), "server_sha256": "c" * 64}
+        called.clear()
+        result = run(parsed, sha, probe=bad_probe, private_probe=fake_trial,
+                     private_token=lambda: "private test token")
+        self.assertEqual(result["status"], "version_mismatch")
+        self.assertEqual(called, [])
+
     def test_watch_publishes_once(self):
         calls = []
         queue = item({"schema": "rapbrain-remote-queue-v1", "task_id": "pilot-001"})
