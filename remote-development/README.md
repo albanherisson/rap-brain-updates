@@ -110,3 +110,7 @@ La tâche `pilot-006` utilise le schéma v2 et l'action fermée `source_validate
 ### Résultat du pilote 006
 
 La veille mise à niveau a publié `results/pilot-006.json` avec `status: pass`. Le commit privé candidat `a0b917cf04ee9f4de8852a1fc093c6691f51ca05` et son manifeste ont été vérifiés : 23 fichiers, 375 259 octets, 16 syntaxes Python, copie temporaire supprimée, Ollama disponible. Le nouveau fichier de tests était présent dans le candidat ; ces tests ont été exécutés localement dans l'environnement de développement (2/2), mais la veille Mac n'a effectué qu'une analyse syntaxique, sans exécuter de code téléchargé. L'installation active n'a pas été modifiée.
+
+### Pilotes 007 et 008 : refus puis reprise
+
+`pilot-007` demandait volontairement une empreinte de serveur erronée. La veille a publié `status: version_mismatch` sans champ `private_source`, donc sans lancer le téléchargement privé. La tâche suivante `pilot-008` a publié `status: pass` : 23 fichiers et 375 259 octets vérifiés, 16 syntaxes Python, copie temporaire supprimée. Cela prouve que le refus d'une version inattendue n'empêche pas la veille de traiter ensuite une tâche valide. Ces pilotes n'ont pas exécuté les tests téléchargés ni exercé le retour arrière d'une installation.
