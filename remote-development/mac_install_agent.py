@@ -149,7 +149,11 @@ def upgrade(home=None, source=None, call=subprocess.run):
         definition = plistlib.loads(old[agent])
     except ValueError:
         raise RuntimeError("Plist installé illisible") from None
-    if definition != legacy_plist(data, definition.get("ProgramArguments", [None])[0]):
+    arguments = definition.get("ProgramArguments") if isinstance(definition, dict) else None
+    if (not isinstance(arguments, list) or len(arguments) != 3 or
+            not isinstance(arguments[0], str) or
+            os.path.realpath(arguments[0]) != os.path.realpath(sys.executable) or
+            definition != legacy_plist(data, arguments[0])):
         raise RuntimeError("Identité de l'agent installé inattendue")
     token = keychain_token()
     token = ""
