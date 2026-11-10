@@ -35,3 +35,5 @@ python3 remote-development/mac_bridge.py pilot-001
 ```
 
 La publication automatique du résultat est désactivée par défaut. L'option `--publish` demande un jeton GitHub à la saisie masquée pour écrire uniquement `remote-development/results/pilot-001.json` sur cette branche ; ce jeton doit avoir une portée limitée à ce dépôt avec la permission Contents en écriture. Le jeton n'est ni enregistré ni affiché. Ne jamais coller ce jeton dans le chat, le dépôt ou un journal. Cette première exécution est ponctuelle ; l'agent en arrière-plan et son authentification durable seront construits après validation de l'aller-retour.
+
+`--watch` lit `queue/current.json` toutes les 60 secondes, ignore les tâches dont le résultat existe déjà, et publie les nouveaux résultats de la même manière. Il demande le jeton une fois à la saisie masquée et ne le conserve qu'en mémoire jusqu'à l'arrêt du processus (`Ctrl-C`). Il fonctionne tant que le Terminal reste ouvert et que le Mac dispose du réseau et ne dort pas. Ce pilote n'est pas encore un service au démarrage, ni une installation permanente.
