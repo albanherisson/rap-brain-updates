@@ -1,10 +1,11 @@
 import plistlib
+import hashlib
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mac_install_agent import FILES, install, paths, plist, put_new_or_same
+from mac_install_agent import FILES, install, legacy_plist, paths, plist, put_new_or_same, upgrade
 
 
 class InstallTest(unittest.TestCase):
@@ -43,6 +44,41 @@ class InstallTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 put_new_or_same(dest, b"new", 0o600)
             self.assertEqual(dest.read_bytes(), b"old")
+
+    def test_upgrade_restarts_and_rolls_back_on_failure(self):
+        for fail_new in (False, True):
+            with tempfile.TemporaryDirectory() as root:
+                home, source = Path(root) / "home", Path(root) / "source"
+                data, agent = paths(home)
+                data.mkdir(parents=True)
+                agent.parent.mkdir(parents=True)
+                source.mkdir()
+                old_hashes = {}
+                for name in FILES:
+                    original = ("old " + name).encode()
+                    (data / name).write_bytes(original)
+                    (source / name).write_bytes(("new " + name).encode())
+                    old_hashes[name] = hashlib.sha256(original).hexdigest()
+                agent.write_bytes(plistlib.dumps(legacy_plist(data, "/usr/bin/python3")))
+                calls = []
+                def fake(args, **kwargs):
+                    calls.append(args)
+                    code = 1 if fail_new and len(calls) == 2 else 0
+                    return type("Result", (), {"returncode": code})()
+                with patch("mac_install_agent.platform.system", return_value="Darwin"), \
+                     patch("mac_install_agent.keychain_token", return_value="github_pat_test"), \
+                     patch("mac_install_agent.LEGACY_SHA", old_hashes), \
+                     patch("mac_install_agent.ollama_executable", return_value=Path("/opt/homebrew/bin/ollama")):
+                    if fail_new:
+                        with self.assertRaisesRegex(RuntimeError, "ancien agent restauré"):
+                            upgrade(home=home, source=source, call=fake)
+                    else:
+                        upgrade(home=home, source=source, call=fake)
+                self.assertEqual(len(calls), 3 if fail_new else 2)
+                self.assertEqual((data / "mac_bridge.py").read_bytes(),
+                                 b"old mac_bridge.py" if fail_new else b"new mac_bridge.py")
+                definition = plistlib.loads(agent.read_bytes())
+                self.assertEqual("EnvironmentVariables" in definition, not fail_new)
 
 
 if __name__ == "__main__":
