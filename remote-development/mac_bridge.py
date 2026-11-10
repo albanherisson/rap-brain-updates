@@ -12,6 +12,7 @@ import hashlib
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,6 +50,24 @@ def contents_url(kind, task_id):
     if kind not in ("tasks", "results") or not TASK_ID.fullmatch(task_id):
         raise ValueError("Identifiant ou type de tâche invalide")
     return API + kind + "/" + task_id + ".json?ref=" + urllib.parse.quote(BRANCH, safe="")
+
+
+def read_queue(get=request):
+    item = get(API + "queue/current.json?ref=" + urllib.parse.quote(BRANCH, safe=""))
+    if not isinstance(item, dict) or item.get("type") != "file" or item.get("encoding") != "base64":
+        raise ValueError("File d'attente absente ou invalide")
+    if not isinstance(item.get("size"), int) or not 0 < item["size"] <= MAX_BYTES:
+        raise ValueError("File d'attente trop grande")
+    try:
+        raw = base64.b64decode(item["content"].replace("\n", ""), validate=True)
+        queue = json.loads(raw)
+    except (KeyError, AttributeError, binascii.Error, UnicodeError, json.JSONDecodeError):
+        raise ValueError("File d'attente illisible") from None
+    if len(raw) != item["size"] or not isinstance(queue, dict) or set(queue) != {"schema", "task_id"}:
+        raise ValueError("Structure de file d'attente invalide")
+    if queue["schema"] != "rapbrain-remote-queue-v1" or not isinstance(queue["task_id"], str) or not TASK_ID.fullmatch(queue["task_id"]):
+        raise ValueError("Identifiant de tâche invalide")
+    return queue["task_id"]
 
 
 def read_task(task_id, get=request):
@@ -104,11 +123,48 @@ def publish(task_id, result, token, get=request):
     return get(url.split("?", 1)[0], method="PUT", token=token, payload=payload)
 
 
+def watch_once(token, get=request, probe=inspect):
+    task_id = read_queue(get)
+    if get(contents_url("results", task_id), token=token) is not None:
+        return task_id, "already_published"
+    task, task_sha = read_task(task_id, get=get)
+    result = run(task, task_sha, probe=probe)
+    publish(task_id, result, token, get=get)
+    return task_id, result["status"]
+
+
+def watch(token, interval=60):
+    previous = None
+    while True:
+        try:
+            task_id, status = watch_once(token)
+            current = task_id + ": " + status
+            if current != previous:
+                print(current, flush=True)
+            previous = current
+        except (ValueError, RuntimeError, urllib.error.URLError) as exc:
+            print("Pont en attente : " + str(exc), file=sys.stderr, flush=True)
+            previous = None
+        time.sleep(interval)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Tâche distante Rap Brain, pilote limité")
-    parser.add_argument("task_id")
+    parser.add_argument("task_id", nargs="?")
     parser.add_argument("--publish", action="store_true", help="Publier uniquement le résultat expurgé")
+    parser.add_argument("--watch", action="store_true", help="Surveiller les tâches tant que ce Terminal reste ouvert")
     args = parser.parse_args()
+    if args.watch:
+        if args.task_id or args.publish:
+            parser.error("--watch n'accepte ni identifiant ni --publish")
+        token = getpass.getpass("Jeton GitHub à portée Contents écriture pour ce dépôt : ")
+        try:
+            watch(token)
+        finally:
+            token = ""
+        return
+    if not args.task_id:
+        parser.error("identifiant de tâche requis")
     task, task_sha = read_task(args.task_id)
     result = run(task, task_sha)
     print(json.dumps(result, sort_keys=True))
