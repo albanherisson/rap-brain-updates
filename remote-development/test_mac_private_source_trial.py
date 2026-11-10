@@ -56,7 +56,29 @@ class PrivateSourceTrialTest(unittest.TestCase):
                 with patch.object(source, "MANIFEST_SHA256", hashlib.sha256(raw).hexdigest()), \
                         patch.object(source, "EXPECTED_SERVER", manifest["server_sha256"]):
                     with self.assertRaisesRegex(RuntimeError, "Chemin de source"):
-                        source.validated_manifest(raw)
+                        source.validated_manifest(raw, hashlib.sha256(raw).hexdigest(), manifest["server_sha256"])
+
+    def test_new_commit_and_changed_source_without_installation(self):
+        with tempfile.TemporaryDirectory() as root:
+            home, parent, files = self.fixture(root)
+            changed = b"x = 3\n"
+            files["rap_brain/module_1.py"] = changed
+            files["rap_brain/test_candidate.py"] = b"import unittest\n"
+            manifest = json.loads(files[source.MANIFEST])
+            next(e for e in manifest["files"] if e["path"] == "rap_brain/module_1.py")["sha256"] = hashlib.sha256(changed).hexdigest()
+            manifest["files"].append({"path": "rap_brain/test_candidate.py", "bytes": len(files["rap_brain/test_candidate.py"]),
+                                      "sha256": hashlib.sha256(files["rap_brain/test_candidate.py"]).hexdigest()})
+            files[source.MANIFEST] = json.dumps(manifest).encode()
+            commit = "b" * 40
+            result = source.trial_commit(
+                "fake", commit, hashlib.sha256(files[source.MANIFEST]).hexdigest(),
+                manifest["server_sha256"],
+                fetch=lambda path, token, requested_commit: files[path] if requested_commit == commit else None,
+                home=home)
+            self.assertEqual(result["source_commit"], commit)
+            self.assertEqual(result["files_verified"], 23)
+            self.assertTrue(result["temporary_copy_removed"])
+            self.assertEqual(list(parent.iterdir()), [])
 
 
 if __name__ == "__main__":
