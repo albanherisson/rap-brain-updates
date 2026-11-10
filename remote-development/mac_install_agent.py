@@ -12,11 +12,15 @@ import tempfile
 from pathlib import Path
 
 from mac_bridge import keychain_token
+from mac_private_source_trial import keychain_token as private_keychain_token
 from mac_preflight import ollama_executable
 
 
 LABEL = "com.gns.rapbrain.remote.p0"
 FILES = ("mac_bridge.py", "mac_preflight.py")
+PRIVATE_FILE = "mac_private_source_trial.py"
+CURRENT_SHA = {"mac_bridge.py": "803dbc3cd5296d64192b6e6c2cd83307eaf82288da2cea943461ce5089c2014a",
+               "mac_preflight.py": "ab32901dc7484ecafeab1d54985119763eb07e00d1e2e9a5e1c4ef51b719546b"}
 LEGACY_SHA = {"mac_bridge.py": "803dbc3cd5296d64192b6e6c2cd83307eaf82288da2cea943461ce5089c2014a",
               "mac_preflight.py": "974ffefde845f8f763e57bd98db0e07142f1b9f699667e4a8e373b5c139cccf4"}
 
@@ -103,7 +107,7 @@ def install(home=None, source=None, python=None, call=subprocess.run):
     data, agent = paths(home)
     if data.is_symlink() or agent.parent.is_symlink():
         raise RuntimeError("Dossier de destination remplacé par un lien")
-    for name in FILES:
+    for name in FILES + (PRIVATE_FILE,):
         path = source / name
         if not path.is_file() or path.is_symlink():
             raise RuntimeError("Source du pont absente ou remplacée par un lien")
@@ -112,7 +116,7 @@ def install(home=None, source=None, python=None, call=subprocess.run):
     token = ""
     data.mkdir(mode=0o700, parents=True, exist_ok=True)
     agent.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    for name in FILES:
+    for name in FILES + (PRIVATE_FILE,):
         content = (source / name).read_bytes()
         put_new_or_same(data / name, content, 0o600)
         if sha(data / name) != hashlib.sha256(content).hexdigest():
@@ -190,18 +194,83 @@ def stop(call=subprocess.run):
         raise RuntimeError("Arrêt launchd refusé (code " + str(result.returncode) + ")")
 
 
+def upgrade_private_trial(home=None, source=None, call=subprocess.run):
+    """Replace only the known health-only agent, preserving its existing plist."""
+    if platform.system() != "Darwin":
+        raise RuntimeError("Mise à niveau réservée à macOS")
+    home = Path.home() if home is None else Path(home)
+    source = Path(__file__).resolve().parent if source is None else Path(source)
+    data, agent = paths(home)
+    bridge, private = data / "mac_bridge.py", data / PRIVATE_FILE
+    incoming = source / "mac_bridge.py"
+    incoming_private = source / PRIVATE_FILE
+    if data.is_symlink() or agent.is_symlink() or not agent.is_file():
+        raise RuntimeError("Agent installé absent ou remplacé")
+    if private.exists() or private.is_symlink():
+        raise RuntimeError("Fichier privé déjà installé : aucun remplacement")
+    for name, expected in CURRENT_SHA.items():
+        path = data / name
+        if path.is_symlink() or not path.is_file() or sha(path) != expected:
+            raise RuntimeError("Version installée du pont inattendue : arrêt")
+    for path in (incoming, incoming_private):
+        if path.is_symlink() or not path.is_file():
+            raise RuntimeError("Nouvelle source du pont absente ou remplacée")
+    old_bridge = bridge.read_bytes()
+    old_plist = agent.read_bytes()
+    try:
+        definition = plistlib.loads(old_plist)
+    except ValueError:
+        raise RuntimeError("Plist installé illisible") from None
+    arguments = definition.get("ProgramArguments") if isinstance(definition, dict) else None
+    if (not isinstance(arguments, list) or len(arguments) != 3 or
+            not isinstance(arguments[0], str) or
+            definition != plist(data, arguments[0], ollama_executable(home))):
+        raise RuntimeError("Identité de l'agent installé inattendue")
+    token = keychain_token()
+    token = ""
+    private_token = private_keychain_token()
+    private_token = ""
+    domain = "gui/" + str(os.getuid())
+    stopped = call(["/bin/launchctl", "bootout", domain + "/" + LABEL],
+                   capture_output=True, text=True, timeout=20, check=False)
+    if stopped.returncode:
+        raise RuntimeError("Agent actuel non arrêté : aucun fichier modifié")
+    try:
+        put_new_or_same(private, incoming_private.read_bytes(), 0o600)
+        replace_owned(bridge, incoming.read_bytes(), 0o600)
+        started = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
+                       capture_output=True, text=True, timeout=20, check=False)
+        if started.returncode:
+            raise RuntimeError("Nouvel agent non démarré")
+    except (RuntimeError, OSError, subprocess.TimeoutExpired):
+        replace_owned(bridge, old_bridge, 0o600)
+        if private.exists() and not private.is_symlink():
+            private.unlink()
+        restored = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
+                        capture_output=True, text=True, timeout=20, check=False)
+        if restored.returncode:
+            raise RuntimeError("Retour arrière écrit, relance manuelle nécessaire") from None
+        raise RuntimeError("Mise à niveau refusée ; ancien agent restauré") from None
+    return LABEL
+
+
 def main():
     parser = argparse.ArgumentParser(description="Installation de la veille Rap Brain P0")
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument("--install", action="store_true")
     actions.add_argument("--upgrade", action="store_true")
+    actions.add_argument("--upgrade-private-trial", action="store_true")
     actions.add_argument("--stop", action="store_true")
     args = parser.parse_args()
     try:
         if args.install:
             print("Veille activée : " + install())
         elif args.upgrade:
+            if sha(Path(__file__).resolve().parent / "mac_bridge.py") != CURRENT_SHA["mac_bridge.py"]:
+                raise RuntimeError("Ancienne mise à niveau incompatible avec ce pont ; utiliser --upgrade-private-trial")
             print("Veille mise à niveau : " + upgrade())
+        elif args.upgrade_private_trial:
+            print("Veille privée en lecture seule : " + upgrade_private_trial())
         else:
             stop()
             print("Veille arrêtée. Fichiers et jeton conservés.")
