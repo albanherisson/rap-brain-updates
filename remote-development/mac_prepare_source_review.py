@@ -17,6 +17,7 @@ EXPECTED_SERVER = "4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e
 MAX_FILE = 2 * 1024 * 1024
 MAX_TOTAL = 20 * 1024 * 1024
 MAX_FILES = 500
+EXCLUDED_DIRS = {".git", "__pycache__", "data", "backup", "backups", "logs", "log", "venv", ".venv"}
 SECRET_PATTERNS = (
     re.compile(rb"(?:github_pat_|gh[pousr]_)[A-Za-z0-9_]{20,}"),
     re.compile(rb"sk-[A-Za-z0-9_-]{20,}"),
@@ -32,7 +33,8 @@ def candidates(root, label):
         raise RuntimeError(label + " absent ou remplacé par un lien")
     found = []
     for current, dirs, files in os.walk(root, followlinks=False):
-        dirs[:] = [d for d in dirs if not (Path(current) / d).is_symlink()]
+        dirs[:] = [d for d in dirs if d.lower() not in EXCLUDED_DIRS
+                   and not (Path(current) / d).is_symlink()]
         for name in files:
             path = Path(current) / name
             if not stat.S_ISREG(path.lstat().st_mode):
