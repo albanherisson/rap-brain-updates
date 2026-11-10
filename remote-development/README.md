@@ -60,3 +60,13 @@ python3 remote-development/mac_install_agent.py --stop
 ```
 
 Le pilote demeure limité à `health_check`. Il faut encore une politique d'exécution sur copies isolées et un canal privé avant de lui confier du code, des analyses ou des journaux.
+
+### Ajustement du chemin d'Ollama
+
+Le premier essai du LaunchAgent a traité `pilot-003` mais affiché `ollama_available: false`, alors que le Terminal interactif voyait Ollama. La mise à niveau capture le dossier de l'exécutable trouvé lors de l'installation et configure le `PATH` de l'agent ; elle vérifie aussi les emplacements habituels de l'application macOS. Pour mettre à niveau l'agent P0 déjà installé :
+
+```bash
+python3 remote-development/mac_install_agent.py --upgrade
+```
+
+L'opération vérifie les deux anciennes empreintes et le plist du pilote, arrête l'agent, remplace les deux scripts et le plist, puis le redémarre. En cas d'échec de démarrage, les anciens fichiers sont restaurés et l'ancien agent est relancé. Le résultat d'une nouvelle tâche doit confirmer `ollama_available: true` avant d'utiliser Ollama depuis la veille.
