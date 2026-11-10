@@ -21,7 +21,7 @@ import urllib.parse
 import urllib.request
 
 from mac_preflight import inspect
-from mac_private_source_trial import keychain_token as private_keychain_token, trial as private_trial
+from mac_private_source_trial import keychain_token as private_keychain_token, trial as private_trial, trial_commit
 from pathlib import Path
 
 
@@ -77,7 +77,7 @@ def read_queue(get=request):
     return queue["task_id"]
 
 
-def read_task(task_id, get=request):
+def read_task(task_id, get=request, now=None):
     item = get(contents_url("tasks", task_id))
     if not isinstance(item, dict) or item.get("type") != "file" or item.get("encoding") != "base64":
         raise ValueError("Tâche GitHub absente ou invalide")
@@ -96,9 +96,25 @@ def read_task(task_id, get=request):
         task = json.loads(raw)
     except (UnicodeError, json.JSONDecodeError):
         raise ValueError("JSON de tâche invalide") from None
-    if not isinstance(task, dict) or set(task) != {"schema", "id", "action", "expected_server_sha256"}:
+    if not isinstance(task, dict) or task.get("id") != task_id:
         raise ValueError("Structure de tâche invalide")
-    if task["schema"] != "rapbrain-remote-task-v1" or task["id"] != task_id or task["action"] not in ("health_check", "private_source_trial"):
+    schema, action = task.get("schema"), task.get("action")
+    if schema == "rapbrain-remote-task-v1" and action in ("health_check", "private_source_trial"):
+        if set(task) != {"schema", "id", "action", "expected_server_sha256"}:
+            raise ValueError("Structure de tâche invalide")
+    elif schema == "rapbrain-remote-task-v2" and action == "source_validate":
+        if set(task) != {"schema", "id", "action", "expected_server_sha256", "source_commit",
+                         "manifest_sha256", "candidate_server_sha256", "expires_at"}:
+            raise ValueError("Structure de tâche invalide")
+        for key, length in (("source_commit", 40), ("manifest_sha256", 64), ("candidate_server_sha256", 64)):
+            value = task[key]
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + r"}", value):
+                raise ValueError("Identité privée invalide")
+        expires = task["expires_at"]
+        current = time.time() if now is None else now
+        if type(expires) is not int or not current < expires <= current + 7 * 86400:
+            raise ValueError("Tâche expirée ou trop éloignée")
+    else:
         raise ValueError("Action non autorisée")
     expected = task["expected_server_sha256"]
     if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-f]{64}", expected):
@@ -106,7 +122,8 @@ def read_task(task_id, get=request):
     return task, hashlib.sha256(raw).hexdigest()
 
 
-def run(task, task_sha, probe=inspect, private_probe=private_trial, private_token=private_keychain_token):
+def run(task, task_sha, probe=inspect, private_probe=private_trial, private_token=private_keychain_token,
+        source_probe=trial_commit):
     info = probe()
     if info["platform"] != "Darwin":
         raise ValueError("Exécution réservée à macOS")
@@ -130,6 +147,18 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
         result["private_source"] = {key: private_result[key] for key in
                                     ("source_commit", "files_verified", "python_syntax_verified",
                                      "bytes_verified", "temporary_copy_removed")}
+    if task["action"] == "source_validate" and result["status"] == "pass":
+        private_result = source_probe(private_token(), task["source_commit"], task["manifest_sha256"],
+                                      task["candidate_server_sha256"])
+        if (private_result.get("schema") != "rapbrain-private-source-trial-v1" or
+                private_result.get("status") != "pass" or
+                private_result.get("source_commit") != task["source_commit"] or
+                private_result.get("manifest_sha256") != task["manifest_sha256"] or
+                private_result.get("temporary_copy_removed") is not True):
+            raise RuntimeError("Validation privée incomplète : aucun résultat publié")
+        result["private_source"] = {key: private_result[key] for key in
+                                    ("source_commit", "manifest_sha256", "files_verified",
+                                     "python_syntax_verified", "bytes_verified", "temporary_copy_removed")}
     return result
 
 
