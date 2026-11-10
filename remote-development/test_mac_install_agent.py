@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from mac_install_agent import FILES, PRIVATE_FILE, install, legacy_plist, paths, plist, put_new_or_same, upgrade, upgrade_private_trial
+from mac_install_agent import FILES, PRIVATE_FILE, install, legacy_plist, paths, plist, put_new_or_same, upgrade, upgrade_private_trial, upgrade_source_validation
 
 
 class InstallTest(unittest.TestCase):
@@ -116,6 +116,45 @@ class InstallTest(unittest.TestCase):
                 self.assertEqual(agent.read_bytes(), before)
                 self.assertEqual((data / "mac_bridge.py").read_bytes(), b"old mac_bridge.py" if fail_new else b"new bridge")
                 self.assertEqual((data / PRIVATE_FILE).exists(), not fail_new)
+
+    def test_source_validation_upgrade_checks_installed_hash_and_rolls_back(self):
+        for fail_new in (False, True):
+            with tempfile.TemporaryDirectory() as root:
+                home, source = Path(root) / "home", Path(root) / "source"
+                data, agent = paths(home)
+                data.mkdir(parents=True)
+                agent.parent.mkdir(parents=True)
+                source.mkdir()
+                old_hashes = {}
+                for name in FILES + (PRIVATE_FILE,):
+                    old = ("verified old " + name).encode()
+                    (data / name).write_bytes(old)
+                    old_hashes[name] = hashlib.sha256(old).hexdigest()
+                    if name != "mac_preflight.py":
+                        (source / name).write_bytes(("new " + name).encode())
+                definition = plist(data, sys.executable, Path("/opt/homebrew/bin/ollama"))
+                agent.write_bytes(plistlib.dumps(definition))
+                plist_bytes = agent.read_bytes()
+                calls = []
+                def fake(args, **kwargs):
+                    calls.append(args)
+                    return type("Result", (), {"returncode": 1 if fail_new and len(calls) == 2 else 0})()
+                with patch("mac_install_agent.platform.system", return_value="Darwin"), \
+                     patch("mac_install_agent.keychain_token", return_value="github_pat_public"), \
+                     patch("mac_install_agent.private_keychain_token", return_value="github_pat_private"), \
+                     patch("mac_install_agent.PRIVATE_TRIAL_SHA", old_hashes), \
+                     patch("mac_install_agent.ollama_executable", return_value=Path("/opt/homebrew/bin/ollama")):
+                    if fail_new:
+                        with self.assertRaisesRegex(RuntimeError, "ancien agent restauré"):
+                            upgrade_source_validation(home=home, source=source, call=fake)
+                    else:
+                        upgrade_source_validation(home=home, source=source, call=fake)
+                self.assertEqual(agent.read_bytes(), plist_bytes)
+                self.assertEqual((data / "mac_bridge.py").read_bytes(),
+                                 b"verified old mac_bridge.py" if fail_new else b"new mac_bridge.py")
+                self.assertEqual((data / PRIVATE_FILE).read_bytes(),
+                                 ("verified old " + PRIVATE_FILE).encode() if fail_new else ("new " + PRIVATE_FILE).encode())
+                self.assertEqual(len(calls), 3 if fail_new else 2)
 
 
 if __name__ == "__main__":
