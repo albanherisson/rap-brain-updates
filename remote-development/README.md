@@ -37,3 +37,26 @@ python3 remote-development/mac_bridge.py pilot-001
 La publication automatique du résultat est désactivée par défaut. L'option `--publish` demande un jeton GitHub à la saisie masquée pour écrire uniquement `remote-development/results/pilot-001.json` sur cette branche ; ce jeton doit avoir une portée limitée à ce dépôt avec la permission Contents en écriture. Le jeton n'est ni enregistré ni affiché. Ne jamais coller ce jeton dans le chat, le dépôt ou un journal. Cette première exécution est ponctuelle ; l'agent en arrière-plan et son authentification durable seront construits après validation de l'aller-retour.
 
 `--watch` lit `queue/current.json` toutes les 60 secondes, ignore les tâches dont le résultat existe déjà, et publie les nouveaux résultats de la même manière. Il demande le jeton une fois à la saisie masquée et ne le conserve qu'en mémoire jusqu'à l'arrêt du processus (`Ctrl-C`). Il fonctionne tant que le Terminal reste ouvert et que le Mac dispose du réseau et ne dort pas. Ce pilote n'est pas encore un service au démarrage, ni une installation permanente.
+
+## Veille durable P0 (utilisateur macOS)
+
+Une fois le pilote ponctuel validé, ajouter le **même** jeton au trousseau de connexion via une invite masquée (ne jamais mettre le jeton dans la commande) :
+
+```bash
+security add-generic-password -a albanherisson -s com.gns.rapbrain.remote.p0 -l "Rap Brain Remote P0" -w
+python3 remote-development/mac_bridge.py --check-keychain
+```
+
+Arrêter la veille ponctuelle avec `Ctrl-C` avant d'activer l'agent. Puis, depuis le dossier contenant les trois fichiers Python du pont :
+
+```bash
+python3 remote-development/mac_install_agent.py --install
+```
+
+L'installation refuse de remplacer des fichiers déjà différents. Elle copie uniquement `mac_bridge.py` et `mac_preflight.py` dans `~/Library/Application Support/RapBrainRemoteBridge`, crée un LaunchAgent dans `~/Library/LaunchAgents` et l'active dans la session utilisateur. Aucune donnée ou application Rap Brain n'est modifiée. Le plist ne contient aucun jeton. `launchd` relance la veille après une ouverture de session et si elle s'arrête ; une coupure réseau est simplement retentée toutes les 60 secondes. Le trousseau doit être déverrouillé. Pour arrêter la veille durable :
+
+```bash
+python3 remote-development/mac_install_agent.py --stop
+```
+
+Le pilote demeure limité à `health_check`. Il faut encore une politique d'exécution sur copies isolées et un canal privé avant de lui confier du code, des analyses ou des journaux.
