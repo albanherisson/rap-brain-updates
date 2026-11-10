@@ -96,3 +96,7 @@ python3 mac_private_source_trial.py --run
 ```
 
 La mise à niveau `--upgrade-private-trial` accepte uniquement les empreintes de l'agent déjà installé après le correctif Ollama, vérifie les deux jetons du trousseau et l'identité du plist, arrête la veille, installe le script de lecture privée et le pont étendu, puis relance l'agent. Si le redémarrage échoue, elle restaure l'ancien pont et le relance. La tâche `pilot-005` est préparée mais la file d'attente n'est pas activée avant cette mise à niveau. Cette action reste une lecture et un contrôle de syntaxe sur copie temporaire ; elle ne lance aucun test métier ni installation réelle.
+
+### Résultat du pilote 005
+
+Après correction du jeton du trousseau (le jeton Remote Bridge avait été saisi à la place du jeton Source Read), l'essai ponctuel sur Mac puis la tâche distante `pilot-005` ont tous deux réussi. Le résultat durable `results/pilot-005.json` indique `status: pass`, 22 fichiers et 374 104 octets vérifiés, 15 syntaxes Python validées, `temporary_copy_removed: true` et `ollama_available: true`. L'agent a publié ce résultat sans Terminal ouvert. L'installation active et les données n'ont pas été modifiées. Le pont ne prend en charge que `health_check` et `private_source_trial` ; il ne déploie pas encore de code.
