@@ -1,0 +1,6 @@
+{
+  "schema": "rapbrain-remote-task-v1",
+  "id": "pilot-007",
+  "action": "health_check",
+  "expected_server_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}
