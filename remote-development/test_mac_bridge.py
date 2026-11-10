@@ -57,6 +57,37 @@ class BridgeTest(unittest.TestCase):
         self.assertEqual(result["status"], "version_mismatch")
         self.assertEqual(called, [])
 
+    def test_versioned_source_validation_is_pinned_and_expires(self):
+        candidate = {"schema": "rapbrain-remote-task-v2", "id": "pilot-006", "action": "source_validate",
+                     "expected_server_sha256": "a" * 64, "source_commit": "b" * 40,
+                     "manifest_sha256": "c" * 64, "candidate_server_sha256": "d" * 64,
+                     "expires_at": 2000003600}
+        task, sha = read_task("pilot-006", get=lambda url: item(candidate), now=2000000000)
+        def probe():
+            return {"platform": "Darwin", "server_sha256": "a" * 64,
+                    "app_present": True, "manager_present": True,
+                    "git_available": True, "ollama_available": True}
+        called = []
+        def fake_source(token, commit, manifest_sha, server_sha):
+            called.append((token, commit, manifest_sha, server_sha))
+            return {"schema": "rapbrain-private-source-trial-v1", "status": "pass",
+                    "source_commit": commit, "manifest_sha256": manifest_sha,
+                    "files_verified": 22, "python_syntax_verified": 15,
+                    "bytes_verified": 374104, "temporary_copy_removed": True}
+        result = run(task, sha, probe=probe, source_probe=fake_source,
+                     private_token=lambda: "masked")
+        self.assertEqual(len(called), 1)
+        self.assertEqual(result["private_source"]["manifest_sha256"], "c" * 64)
+        self.assertNotIn("masked", str(result))
+        with self.assertRaisesRegex(ValueError, "expirée"):
+            read_task("pilot-006", get=lambda url: item(candidate), now=2000003600)
+        with self.assertRaisesRegex(ValueError, "Structure"):
+            read_task("pilot-006", get=lambda url: item({**candidate, "command": "rm -rf /"}), now=2000000000)
+        called.clear()
+        run(task, sha, probe=lambda: {**probe(), "server_sha256": "e" * 64},
+            source_probe=fake_source, private_token=lambda: "masked")
+        self.assertEqual(called, [])
+
     def test_watch_publishes_once(self):
         calls = []
         queue = item({"schema": "rapbrain-remote-queue-v1", "task_id": "pilot-001"})
