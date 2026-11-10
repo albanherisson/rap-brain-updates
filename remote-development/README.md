@@ -70,3 +70,9 @@ python3 remote-development/mac_install_agent.py --upgrade
 ```
 
 L'opération vérifie les deux anciennes empreintes et le plist du pilote, arrête l'agent, remplace les deux scripts et le plist, puis le redémarre. En cas d'échec de démarrage, les anciens fichiers sont restaurés et l'ancien agent est relancé. Le résultat d'une nouvelle tâche doit confirmer `ollama_available: true` avant d'utiliser Ollama depuis la veille.
+
+## Préparer le dépôt privé du code
+
+Le pilote `pilot-004` a confirmé qu'Ollama est visible sous launchd. Avant de synchroniser le code complet, exécuter `mac_source_inventory.py` sur le Mac. Il inspecte uniquement les trois racines connues (application Rap Brain, Manager installé, sauvegardes du Manager), ignore les liens symboliques et ne lit pas le contenu des fichiers. Il écrit une liste locale des chemins candidats sous `~/Library/Application Support/RapBrainRemoteBridge/source_inventory.json` avec des droits restreints, sans écraser un rapport existant. La sortie Terminal ne contient que des nombres de fichiers et tailles par catégorie. Aucun transfert vers GitHub n'a lieu.
+
+Même dans un dépôt privé, les fichiers `private_data`, bases, sauvegardes, journaux, clés et configurations nécessitent une sauvegarde séparée et ne sont pas des sources à pousser. La catégorie `source_candidate` n'est pas une approbation automatique : elle doit passer une revue des secrets avant toute synchronisation.
