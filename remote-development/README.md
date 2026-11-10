@@ -85,7 +85,7 @@ Le premier paquet produit avant correction contenait 31 fichiers, dont neuf inst
 
 ## Essai de lecture du code privé (sans installation)
 
-`mac_private_source_trial.py` lit le manifeste du dépôt privé à l'empreinte `31236459f934145cc20b7274beeaf910c318cee0639325e7496021b0fa3233c7` et le commit `629b95df0cf28e21db941b82a823561d388eac67`. Il exige un jeton fine-grained distinct, limité au seul dépôt privé avec Contents **Read-only**, stocké dans le trousseau sous `com.gns.rapbrain.source.readonly.p0`. Il télécharge les 22 sources dans un dossier temporaire du pont, vérifie leurs tailles et SHA-256, analyse la syntaxe Python sans importer les modules, puis supprime le dossier. Le résultat ne contient ni code, ni données utilisateur, ni jeton. Il n'utilise pas la veille installée et ne modifie pas l'application ou le Manager.
+`mac_private_source_trial.py` lit le manifeste du dépôt privé à l'empreinte `31236459f934145cc20b7274beeaf910c318cee0639325e7496021b0fa3233c7` et le commit `629b95df0cf28e21db941b82a823561d388eac67`. Il exige un jeton fine-grained distinct, limité au seul dépôt privé avec Contents **Read-only**, stocké dans le trousseau sous `com.gns.rapbrain.source.readonly.p0`. Il télécharge les 22 sources dans un dossier temporaire du pont, vérifie leurs tailles et SHA-256, analyse la syntaxe Python sans importer les modules, puis supprime le dossier. Le résultat ne contient ni code, ni données utilisateur, ni jeton. Il ne modifie pas l'application ou le Manager. La veille peut déclencher le même essai après sa mise à niveau contrôlée.
 
 Après création du jeton en lecture seule, le saisir uniquement dans l'invite masquée du Terminal :
 
@@ -95,4 +95,4 @@ python3 mac_private_source_trial.py --check-keychain
 python3 mac_private_source_trial.py --run
 ```
 
-Cet essai reste ponctuel. L'automatisation des tâches sur une copie isolée nécessitera encore une mise à niveau contrôlée de l'agent, une liste d'opérations autorisées et une vérification de retour arrière.
+La mise à niveau `--upgrade-private-trial` accepte uniquement les empreintes de l'agent déjà installé après le correctif Ollama, vérifie les deux jetons du trousseau et l'identité du plist, arrête la veille, installe le script de lecture privée et le pont étendu, puis relance l'agent. Si le redémarrage échoue, elle restaure l'ancien pont et le relance. La tâche `pilot-005` est préparée mais la file d'attente n'est pas activée avant cette mise à niveau. Cette action reste une lecture et un contrôle de syntaxe sur copie temporaire ; elle ne lance aucun test métier ni installation réelle.
