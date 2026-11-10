@@ -31,6 +31,7 @@ ACCOUNT = "albanherisson"
 API = "https://api.github.com/repos/" + REPO + "/contents/"
 MAX_FILE = 2 * 1024 * 1024
 MAX_TOTAL = 20 * 1024 * 1024
+MAX_FILES = 100
 SUFFIXES = {".py", ".js", ".css", ".html", ".swift", ".sh", ".command"}
 EXCLUDED = {".git", "data", "backup", "backups", "sauvegardes", "logs", "log", ".venv", "venv"}
 
@@ -50,8 +51,10 @@ def keychain_token(run=subprocess.run):
     return token
 
 
-def github_file(path, token, opener=urllib.request.urlopen):
-    url = API + urllib.parse.quote(path, safe="/") + "?ref=" + COMMIT
+def github_file(path, token, commit=COMMIT, opener=urllib.request.urlopen):
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise RuntimeError("Commit privé invalide")
+    url = API + urllib.parse.quote(path, safe="/") + "?ref=" + commit
     request = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json", "User-Agent": "RapBrainPrivateSourceTrial/1",
         "Authorization": "Bearer " + token})
@@ -74,8 +77,8 @@ def github_file(path, token, opener=urllib.request.urlopen):
         raise RuntimeError("Réponse GitHub invalide") from None
 
 
-def validated_manifest(raw):
-    if hashlib.sha256(raw).hexdigest() != MANIFEST_SHA256:
+def validated_manifest(raw, manifest_sha=MANIFEST_SHA256, expected_server=EXPECTED_SERVER):
+    if hashlib.sha256(raw).hexdigest() != manifest_sha:
         raise RuntimeError("Manifeste privé différent de la version revue")
     try:
         manifest = json.loads(raw)
@@ -84,8 +87,8 @@ def validated_manifest(raw):
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if (not isinstance(manifest, dict) or set(manifest) != {"schema", "server_sha256", "files"} or
             manifest["schema"] != "rapbrain-private-source-v1" or
-            manifest["server_sha256"] != EXPECTED_SERVER or
-            not isinstance(files, list) or len(files) != 22):
+            manifest["server_sha256"] != expected_server or
+            not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES):
         raise RuntimeError("Structure de manifeste inattendue")
     seen, total = set(), 0
     for entry in files:
@@ -110,19 +113,19 @@ def validated_manifest(raw):
     return files
 
 
-def trial(token, fetch=github_file, home=None):
+def _trial(fetch_file, commit, manifest_sha, expected_server, home=None):
     home = Path.home() if home is None else Path(home)
     parent = home / "Library" / "Application Support" / "RapBrainRemoteBridge"
     if parent.is_symlink() or not parent.is_dir():
         raise RuntimeError("Dossier du pont absent ou remplacé")
-    manifest = validated_manifest(fetch(MANIFEST, token))
+    manifest = validated_manifest(fetch_file(MANIFEST), manifest_sha, expected_server)
     python_files, total = 0, 0
     with tempfile.TemporaryDirectory(prefix="private-source-trial-", dir=parent) as directory:
         workspace = Path(directory)
         os.chmod(workspace, 0o700)
         for item in manifest:
             name = item["path"]
-            content = fetch(name, token)
+            content = fetch_file(name)
             if len(content) != item["bytes"] or hashlib.sha256(content).hexdigest() != item["sha256"]:
                 raise RuntimeError("Source différente du manifeste : " + name)
             if name.endswith(".py"):
@@ -137,13 +140,25 @@ def trial(token, fetch=github_file, home=None):
                 stream.write(content)
             destination.chmod(0o600)
             total += len(content)
-        if hashlib.sha256((workspace / "rap_brain" / "server.py").read_bytes()).hexdigest() != EXPECTED_SERVER:
+        if hashlib.sha256((workspace / "rap_brain" / "server.py").read_bytes()).hexdigest() != expected_server:
             raise RuntimeError("Serveur inattendu")
     if workspace.exists():
         raise RuntimeError("Copie temporaire non supprimée")
-    return {"schema": "rapbrain-private-source-trial-v1", "status": "pass", "source_commit": COMMIT,
+    return {"schema": "rapbrain-private-source-trial-v1", "status": "pass", "source_commit": commit,
+            "manifest_sha256": manifest_sha,
             "files_verified": len(manifest), "python_syntax_verified": python_files,
             "bytes_verified": total, "temporary_copy_removed": True, "installed_app_untouched": True}
+
+
+def trial(token, fetch=github_file, home=None):
+    return _trial(lambda path: fetch(path, token), COMMIT, MANIFEST_SHA256, EXPECTED_SERVER, home)
+
+
+def trial_commit(token, commit, manifest_sha, expected_server, fetch=github_file, home=None):
+    for value, length in ((commit, 40), (manifest_sha, 64), (expected_server, 64)):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + r"}", value):
+            raise RuntimeError("Identité du candidat invalide")
+    return _trial(lambda path: fetch(path, token, commit), commit, manifest_sha, expected_server, home)
 
 
 def main():
