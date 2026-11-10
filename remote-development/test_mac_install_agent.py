@@ -1,5 +1,6 @@
 import plistlib
 import hashlib
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -59,7 +60,7 @@ class InstallTest(unittest.TestCase):
                     (data / name).write_bytes(original)
                     (source / name).write_bytes(("new " + name).encode())
                     old_hashes[name] = hashlib.sha256(original).hexdigest()
-                agent.write_bytes(plistlib.dumps(legacy_plist(data, "/usr/bin/python3")))
+                agent.write_bytes(plistlib.dumps(legacy_plist(data, sys.executable)))
                 calls = []
                 def fake(args, **kwargs):
                     calls.append(args)
