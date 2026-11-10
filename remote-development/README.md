@@ -25,3 +25,13 @@ python3 remote-development/mac_preflight.py
 ```
 
 Le script affiche un JSON limité à des indicateurs, versions et empreintes. Il ne lit pas les fichiers de données et ne contacte aucun service. Copier ce JSON dans la conversation pour préparer le canal suivant.
+
+## Premier pilote distant
+
+La tâche `pilot-001` sur cette branche demande seulement un contrôle de version et de présence des outils. `mac_bridge.py` lit la tâche sur l'API GitHub, refuse les champs ou actions inconnus, puis affiche un résultat sans base, paroles, chemins locaux, journaux ni jetons. Il ne lance aucune commande issue de la tâche.
+
+```bash
+python3 remote-development/mac_bridge.py pilot-001
+```
+
+La publication automatique du résultat est désactivée par défaut. L'option `--publish` demande un jeton GitHub à la saisie masquée pour écrire uniquement `remote-development/results/pilot-001.json` sur cette branche ; ce jeton doit avoir une portée limitée à ce dépôt avec la permission Contents en écriture. Le jeton n'est ni enregistré ni affiché. Ne jamais coller ce jeton dans le chat, le dépôt ou un journal. Cette première exécution est ponctuelle ; l'agent en arrière-plan et son authentification durable seront construits après validation de l'aller-retour.
