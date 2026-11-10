@@ -17,6 +17,8 @@ class ReviewPackageTest(unittest.TestCase):
         (app / "server.py").write_bytes(server)
         (app / "data").mkdir()
         (app / "data" / "rapbrain.sqlite3").write_bytes(b"PRIVATE DATABASE")
+        (app / "backups").mkdir()
+        (app / "backups" / "old_server.py").write_bytes(b"old code")
         (manager / "manager.py").write_bytes(b"manager code")
         return home, app
 
@@ -30,6 +32,7 @@ class ReviewPackageTest(unittest.TestCase):
                 self.assertEqual(sorted(archive.namelist()),
                                  ["_manifest.json", "manager_app/manager.py", "rap_brain/server.py"])
                 self.assertNotIn(b"PRIVATE DATABASE", archive.read("_manifest.json"))
+                self.assertNotIn("rap_brain/backups/old_server.py", archive.namelist())
 
     def test_detected_secret_aborts_before_creating_archive(self):
         with tempfile.TemporaryDirectory() as root:
