@@ -7,10 +7,13 @@ This pilot has no shell execution and cannot modify Rap Brain or its database.
 import argparse
 import base64
 import binascii
+import fcntl
 import getpass
 import hashlib
 import json
+import os
 import re
+import subprocess
 import sys
 import time
 import urllib.error
@@ -18,6 +21,7 @@ import urllib.parse
 import urllib.request
 
 from mac_preflight import inspect
+from pathlib import Path
 
 
 REPO = "albanherisson/rap-brain-updates"
@@ -25,6 +29,8 @@ BRANCH = "p0/remote-development-preflight"
 API = "https://api.github.com/repos/" + REPO + "/contents/remote-development/"
 TASK_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,49}\Z")
 MAX_BYTES = 4096
+KEYCHAIN_SERVICE = "com.gns.rapbrain.remote.p0"
+KEYCHAIN_ACCOUNT = "albanherisson"
 
 
 def request(url, method="GET", token=None, payload=None):
@@ -85,7 +91,10 @@ def read_task(task_id, get=request):
         raise ValueError("Base64 invalide") from None
     if len(raw) != item["size"] or len(raw) > MAX_BYTES:
         raise ValueError("Taille de tâche incohérente")
-    task = json.loads(raw)
+    try:
+        task = json.loads(raw)
+    except (UnicodeError, json.JSONDecodeError):
+        raise ValueError("JSON de tâche invalide") from None
     if not isinstance(task, dict) or set(task) != {"schema", "id", "action", "expected_server_sha256"}:
         raise ValueError("Structure de tâche invalide")
     if task["schema"] != "rapbrain-remote-task-v1" or task["id"] != task_id or task["action"] != "health_check":
@@ -148,20 +157,75 @@ def watch(token, interval=60):
         time.sleep(interval)
 
 
+def keychain_token(run_command=subprocess.run):
+    args = ["/usr/bin/security", "find-generic-password", "-a", KEYCHAIN_ACCOUNT,
+            "-s", KEYCHAIN_SERVICE, "-w"]
+    try:
+        result = run_command(args, capture_output=True, text=True, timeout=15, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        raise RuntimeError("Trousseau indisponible") from None
+    if result.returncode != 0 or not result.stdout.strip():
+        raise RuntimeError("Jeton absent du trousseau ou accès refusé")
+    token = result.stdout.strip()
+    if "\n" in token or "\r" in token or not token.startswith("github_pat_"):
+        raise RuntimeError("Format du jeton inattendu")
+    return token
+
+
+def agent_lock(home=None):
+    home = Path.home() if home is None else Path(home)
+    directory = home / "Library" / "Application Support" / "RapBrainRemoteBridge"
+    if directory.is_symlink():
+        raise RuntimeError("Dossier du pont remplacé par un lien")
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path = directory / "agent.lock"
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise RuntimeError("Une veille du pont fonctionne déjà") from None
+    return fd
+
+
 def main():
     parser = argparse.ArgumentParser(description="Tâche distante Rap Brain, pilote limité")
     parser.add_argument("task_id", nargs="?")
     parser.add_argument("--publish", action="store_true", help="Publier uniquement le résultat expurgé")
     parser.add_argument("--watch", action="store_true", help="Surveiller les tâches tant que ce Terminal reste ouvert")
+    parser.add_argument("--watch-keychain", action="store_true", help="Veille avec jeton du trousseau macOS")
+    parser.add_argument("--check-keychain", action="store_true", help="Vérifier l'accès au jeton sans l'afficher")
     args = parser.parse_args()
+    if args.check_keychain:
+        if args.task_id or args.publish or args.watch or args.watch_keychain:
+            parser.error("--check-keychain s'utilise seul")
+        token = keychain_token()
+        token = ""
+        print("Trousseau Rap Brain : jeton accessible")
+        return
+    if args.watch_keychain:
+        if args.task_id or args.publish or args.watch:
+            parser.error("--watch-keychain s'utilise seul")
+        lock = agent_lock()
+        try:
+            token = keychain_token()
+            try:
+                watch(token)
+            finally:
+                token = ""
+        finally:
+            os.close(lock)
+        return
     if args.watch:
         if args.task_id or args.publish:
             parser.error("--watch n'accepte ni identifiant ni --publish")
+        lock = agent_lock()
         token = getpass.getpass("Jeton GitHub à portée Contents écriture pour ce dépôt : ")
         try:
             watch(token)
         finally:
             token = ""
+            os.close(lock)
         return
     if not args.task_id:
         parser.error("identifiant de tâche requis")
