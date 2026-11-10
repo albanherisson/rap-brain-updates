@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mac_preflight import inspect
+from mac_preflight import inspect, ollama_executable
 
 
 class PreflightTest(unittest.TestCase):
@@ -32,6 +32,14 @@ class PreflightTest(unittest.TestCase):
             secret.write_bytes(b"secret")
             (app / "server.py").symlink_to(secret)
             self.assertIsNone(inspect(home, which=lambda _: None)["server_sha256"])
+
+    def test_ollama_executable_must_exist_and_be_executable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ollama"
+            path.write_text("test")
+            self.assertIsNone(ollama_executable(directory, which=lambda _: str(path)))
+            path.chmod(0o700)
+            self.assertEqual(ollama_executable(directory, which=lambda _: str(path)), path)
 
 
 if __name__ == "__main__":
