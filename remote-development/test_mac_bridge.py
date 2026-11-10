@@ -2,7 +2,7 @@ import base64
 import json
 import unittest
 
-from mac_bridge import contents_url, read_queue, read_task, run, publish, watch_once
+from mac_bridge import contents_url, keychain_token, read_queue, read_task, run, publish, watch_once
 
 
 TASK = {"schema": "rapbrain-remote-task-v1", "id": "pilot-001", "action": "health_check",
@@ -56,6 +56,14 @@ class BridgeTest(unittest.TestCase):
         def fake(url, **kwargs):
             return queue if "queue/current.json" in url else {"type": "file"}
         self.assertEqual(watch_once("token", get=fake), ("pilot-001", "already_published"))
+
+    def test_keychain_lookup_uses_fixed_service_and_no_shell(self):
+        def fake(args, **kwargs):
+            self.assertEqual(args[0], "/usr/bin/security")
+            self.assertIn("com.gns.rapbrain.remote.p0", args)
+            self.assertFalse(kwargs.get("shell", False))
+            return type("Result", (), {"returncode": 0, "stdout": "github_pat_test\n"})()
+        self.assertEqual(keychain_token(run_command=fake), "github_pat_test")
 
 
 if __name__ == "__main__":
