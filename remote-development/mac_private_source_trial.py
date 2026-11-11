@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Read a pinned private source snapshot into a disposable, isolated directory.
 
-This trial never executes downloaded code and never touches the installed app.
+The optional reviewed callback runs only after hash verification in the temporary copy.
+The installed app is never touched.
 """
 
 import argparse
@@ -113,13 +114,13 @@ def validated_manifest(raw, manifest_sha=MANIFEST_SHA256, expected_server=EXPECT
     return files
 
 
-def _trial(fetch_file, commit, manifest_sha, expected_server, home=None):
+def _trial(fetch_file, commit, manifest_sha, expected_server, home=None, check=None):
     home = Path.home() if home is None else Path(home)
     parent = home / "Library" / "Application Support" / "RapBrainRemoteBridge"
     if parent.is_symlink() or not parent.is_dir():
         raise RuntimeError("Dossier du pont absent ou remplacé")
     manifest = validated_manifest(fetch_file(MANIFEST), manifest_sha, expected_server)
-    python_files, total = 0, 0
+    python_files, total, checked = 0, 0, None
     with tempfile.TemporaryDirectory(prefix="private-source-trial-", dir=parent) as directory:
         workspace = Path(directory)
         os.chmod(workspace, 0o700)
@@ -142,23 +143,28 @@ def _trial(fetch_file, commit, manifest_sha, expected_server, home=None):
             total += len(content)
         if hashlib.sha256((workspace / "rap_brain" / "server.py").read_bytes()).hexdigest() != expected_server:
             raise RuntimeError("Serveur inattendu")
+        if check is not None:
+            checked = check(workspace, manifest)
     if workspace.exists():
         raise RuntimeError("Copie temporaire non supprimée")
-    return {"schema": "rapbrain-private-source-trial-v1", "status": "pass", "source_commit": commit,
+    result = {"schema": "rapbrain-private-source-trial-v1", "status": "pass", "source_commit": commit,
             "manifest_sha256": manifest_sha,
             "files_verified": len(manifest), "python_syntax_verified": python_files,
             "bytes_verified": total, "temporary_copy_removed": True, "installed_app_untouched": True}
+    if checked is not None:
+        result["reviewed_test"] = checked
+    return result
 
 
 def trial(token, fetch=github_file, home=None):
     return _trial(lambda path: fetch(path, token), COMMIT, MANIFEST_SHA256, EXPECTED_SERVER, home)
 
 
-def trial_commit(token, commit, manifest_sha, expected_server, fetch=github_file, home=None):
+def trial_commit(token, commit, manifest_sha, expected_server, fetch=github_file, home=None, check=None):
     for value, length in ((commit, 40), (manifest_sha, 64), (expected_server, 64)):
         if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{" + str(length) + r"}", value):
             raise RuntimeError("Identité du candidat invalide")
-    return _trial(lambda path: fetch(path, token, commit), commit, manifest_sha, expected_server, home)
+    return _trial(lambda path: fetch(path, token, commit), commit, manifest_sha, expected_server, home, check)
 
 
 def main():
