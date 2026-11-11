@@ -175,6 +175,27 @@ class BridgeTest(unittest.TestCase):
             read_task("pilot-010", get=lambda url: item({**candidate, "manifest_sha256": "0" * 64}),
                       now=2000000000)
 
+    def test_manager_inventory_is_read_only_and_version_gated(self):
+        candidate = {**TASK, "id": "pilot-011", "action": "manager_inventory"}
+        task, sha = read_task("pilot-011", get=lambda url: item(candidate))
+        probe = lambda: {"platform": "Darwin", "server_sha256": "a" * 64,
+                         "app_present": True, "manager_present": True,
+                         "git_available": True, "ollama_available": True}
+        calls = []
+        def inventory():
+            calls.append(True)
+            return {"schema": "rapbrain-manager-inventory-v1",
+                    "applications_bundle": {"present": True},
+                    "beta14_bundle": {"present": False}, "backup_state_present": True}
+        result = run(task, sha, probe=probe, manager_inventory=inventory)
+        self.assertEqual(result["manager_inventory"]["beta14_bundle"], {"present": False})
+        self.assertEqual(len(calls), 1)
+        run(task, sha, probe=lambda: {**probe(), "server_sha256": "0" * 64},
+            manager_inventory=inventory)
+        self.assertEqual(len(calls), 1)
+        with self.assertRaisesRegex(ValueError, "Structure"):
+            read_task("pilot-011", get=lambda url: item({**candidate, "path": "/"}))
+
     def test_watch_skips_existing_result(self):
         queue = item({"schema": "rapbrain-remote-queue-v1", "task_id": "pilot-001"})
         def fake(url, **kwargs):
