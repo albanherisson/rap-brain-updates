@@ -27,7 +27,7 @@ from mac_reviewed_test_trial import (run_reviewed_test, COMMIT as REVIEWED_COMMI
                                      SERVER_SHA256 as REVIEWED_SERVER,
                                      TEST_SHA256 as REVIEWED_TEST_SHA)
 from mac_manager_lab_trial import run_manager_lab, RUNNER_SHA256 as MANAGER_RUNNER_SHA
-from mac_manager_inventory import inspect as inspect_manager
+from mac_manager_inventory import inspect as inspect_manager, running as manager_running
 from pathlib import Path
 
 
@@ -105,7 +105,7 @@ def read_task(task_id, get=request, now=None):
     if not isinstance(task, dict) or task.get("id") != task_id:
         raise ValueError("Structure de tâche invalide")
     schema, action = task.get("schema"), task.get("action")
-    if schema == "rapbrain-remote-task-v1" and action in ("health_check", "private_source_trial", "manager_inventory"):
+    if schema == "rapbrain-remote-task-v1" and action in ("health_check", "private_source_trial", "manager_inventory", "manager_process"):
         if set(task) != {"schema", "id", "action", "expected_server_sha256"}:
             raise ValueError("Structure de tâche invalide")
     elif schema == "rapbrain-remote-task-v2" and action in ("source_validate", "reviewed_test_trial", "manager_lab_trial"):
@@ -133,7 +133,7 @@ def read_task(task_id, get=request, now=None):
 
 def run(task, task_sha, probe=inspect, private_probe=private_trial, private_token=private_keychain_token,
         source_probe=trial_commit, reviewed_probe=run_reviewed_test, manager_probe=run_manager_lab,
-        manager_inventory=inspect_manager):
+        manager_inventory=inspect_manager, manager_process=manager_running):
     info = probe()
     if info["platform"] != "Darwin":
         raise ValueError("Exécution réservée à macOS")
@@ -208,6 +208,14 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
         if inventory.get("schema") != "rapbrain-manager-inventory-v1":
             raise RuntimeError("Inventaire Manager invalide")
         result["manager_inventory"] = inventory
+    if task["action"] == "manager_process" and result["status"] == "pass":
+        process = manager_process()
+        fields = ("applications_bundle_running", "beta14_bundle_running",
+                  "server_running", "port_8765_listening")
+        if (not isinstance(process, dict) or process.get("schema") != "rapbrain-manager-process-v1" or
+                any(type(process.get(key)) is not bool for key in fields)):
+            raise RuntimeError("Inventaire des processus invalide")
+        result["manager_process"] = {key: process[key] for key in fields}
     return result
 
 
