@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mac_manager_inventory import inspect, RESOURCE_NAMES
+from mac_manager_inventory import inspect, running, RESOURCE_NAMES
 
 
 class InventoryTest(unittest.TestCase):
@@ -35,6 +35,25 @@ class InventoryTest(unittest.TestCase):
             (home / "Downloads").mkdir()
             with self.assertRaisesRegex(ValueError, "redirigé"):
                 inspect(home)
+
+    def test_process_census_returns_only_categories(self):
+        with tempfile.TemporaryDirectory() as root:
+            home = Path(root)
+            beta = home / "Downloads" / "RapBrainManager_App_Beta14" / "Rap Brain Manager Beta 14.app"
+            commands = ("123 /bin/other --secret value\n"
+                        "456 " + str(beta / "Contents" / "MacOS" / "RapBrain") + "\n"
+                        "789 /usr/bin/python3 " + str(home / "Downloads" / "rap-brain" / "server.py") + "\n")
+            calls = []
+            def fake(args, **kwargs):
+                calls.append(args)
+                return type("Result", (), {"returncode": 0, "stdout": commands if len(calls) == 1 else "p789\n",
+                                            "stderr": ""})()
+            result = running(home, call=fake)
+            self.assertTrue(result["beta14_bundle_running"])
+            self.assertTrue(result["server_running"])
+            self.assertFalse(result["applications_bundle_running"])
+            self.assertTrue(result["port_8765_listening"])
+            self.assertNotIn("secret", str(result))
 
 
 if __name__ == "__main__":
