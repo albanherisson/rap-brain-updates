@@ -3,6 +3,7 @@ import json
 import unittest
 
 from mac_bridge import contents_url, keychain_token, read_queue, read_task, run, publish, watch_once
+from mac_reviewed_test_trial import COMMIT, MANIFEST_SHA256, SERVER_SHA256, TEST_SHA256
 
 
 TASK = {"schema": "rapbrain-remote-task-v1", "id": "pilot-001", "action": "health_check",
@@ -106,6 +107,40 @@ class BridgeTest(unittest.TestCase):
                          "git_available": True, "ollama_available": True}
         self.assertEqual(watch_once("token", get=fake, probe=probe), ("pilot-001", "pass"))
         self.assertEqual(sum(method == "PUT" for _, method in calls), 1)
+
+    def test_reviewed_test_requires_exact_identity_and_reports_redacted_pass(self):
+        candidate = {"schema": "rapbrain-remote-task-v2", "id": "pilot-009",
+                     "action": "reviewed_test_trial", "expected_server_sha256": SERVER_SHA256,
+                     "source_commit": COMMIT, "manifest_sha256": MANIFEST_SHA256,
+                     "candidate_server_sha256": SERVER_SHA256, "expires_at": 2000003600}
+        task, sha = read_task("pilot-009", get=lambda url: item(candidate), now=2000000000)
+        probe = lambda: {"platform": "Darwin", "server_sha256": SERVER_SHA256,
+                         "app_present": True, "manager_present": True,
+                         "git_available": True, "ollama_available": True}
+        calls = []
+        def reviewed(token):
+            calls.append(token)
+            return {"schema": "rapbrain-private-source-trial-v1", "status": "pass",
+                    "source_commit": COMMIT, "manifest_sha256": MANIFEST_SHA256,
+                    "files_verified": 23, "python_syntax_verified": 16,
+                    "bytes_verified": 374104, "temporary_copy_removed": True,
+                    "reviewed_test": {"status": "pass", "tests_run": 2,
+                                      "test_sha256": TEST_SHA256, "timeout_seconds": 20}}
+        result = run(task, sha, probe=probe, reviewed_probe=reviewed,
+                     private_token=lambda: "secret")
+        self.assertEqual(calls, ["secret"])
+        self.assertEqual(result["reviewed_test"]["tests_run"], 2)
+        self.assertNotIn("secret", str(result))
+        calls.clear()
+        mismatch = run(task, sha, probe=lambda: {**probe(), "server_sha256": "0" * 64},
+                       reviewed_probe=reviewed, private_token=lambda: "secret")
+        self.assertEqual(mismatch["status"], "version_mismatch")
+        self.assertEqual(calls, [])
+        with self.assertRaisesRegex(ValueError, "Version des tests"):
+            read_task("pilot-009", get=lambda url: item({**candidate, "source_commit": "b" * 40}),
+                      now=2000000000)
+        with self.assertRaisesRegex(ValueError, "expirée"):
+            read_task("pilot-009", get=lambda url: item(candidate), now=2000003600)
 
     def test_watch_skips_existing_result(self):
         queue = item({"schema": "rapbrain-remote-queue-v1", "task_id": "pilot-001"})
