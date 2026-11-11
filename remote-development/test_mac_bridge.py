@@ -196,6 +196,21 @@ class BridgeTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Structure"):
             read_task("pilot-011", get=lambda url: item({**candidate, "path": "/"}))
 
+    def test_manager_process_report_excludes_raw_processes(self):
+        candidate = {**TASK, "id": "pilot-012", "action": "manager_process"}
+        task, sha = read_task("pilot-012", get=lambda url: item(candidate))
+        probe = lambda: {"platform": "Darwin", "server_sha256": "a" * 64,
+                         "app_present": True, "manager_present": True,
+                         "git_available": True, "ollama_available": True}
+        process = lambda: {"schema": "rapbrain-manager-process-v1",
+                           "applications_bundle_running": False, "beta14_bundle_running": True,
+                           "server_running": True, "port_8765_listening": True,
+                           "raw_command": "private command"}
+        result = run(task, sha, probe=probe, manager_process=process)
+        self.assertTrue(result["manager_process"]["beta14_bundle_running"])
+        self.assertNotIn("private command", str(result))
+        self.assertNotIn("raw_command", str(result))
+
     def test_watch_skips_existing_result(self):
         queue = item({"schema": "rapbrain-remote-queue-v1", "task_id": "pilot-001"})
         def fake(url, **kwargs):
