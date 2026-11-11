@@ -1,0 +1,191 @@
+"""Patch a pinned server.py into an isolated output copy, never in place.
+
+The inserted lifetime guard keeps a shared OS lock for the complete life of
+both the HTTP parent and its worker subprocess. An external updater acquires
+the same file exclusively, nonblocking, only after stopping verified processes.
+During its restart handoff a durable marker admits only a child launched with
+the matching maintenance ticket. The marker must be created under the exclusive
+lock and retained until the transaction reaches a terminal state.
+This is a source preparation step, not a distribution or production installer.
+"""
+import ast
+import hashlib
+from pathlib import Path
+
+EXPECTED_SOURCE_SHA256 = '4380ab4fd97d727ced4521eb66b11004e21f9f15c0eafaee955f1f0145913ad7'
+
+GUARD = '''# Rap Brain update lifetime guard v2 — preserve through upgrades.
+def __rb_update_guard_v2():
+    import fcntl as __rb_fcntl
+    import os as __rb_os
+    import stat as __rb_stat
+    import secrets as __rb_secrets
+    from pathlib import Path as __rb_Path
+    __rb_root = __rb_Path.home() / 'Downloads' / 'RapBrainManagerBackups' / 'secure-update'
+    if any(__rb_part.is_symlink() for __rb_part in
+           (__rb_root, *__rb_root.parents)):
+        raise RuntimeError('update_guard_unsafe_directory')
+    __rb_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+    __rb_info = __rb_root.stat()
+    if (__rb_info.st_uid != __rb_os.getuid() or
+            not __rb_stat.S_ISDIR(__rb_info.st_mode) or
+            __rb_info.st_mode & 0o077):
+        raise RuntimeError('update_guard_private_directory_required')
+    __rb_lock = __rb_os.open(__rb_root / 'update.lock',
+        __rb_os.O_CREAT | __rb_os.O_RDWR | __rb_os.O_NOFOLLOW, 0o600)
+    try:
+        __rb_fcntl.flock(__rb_lock, __rb_fcntl.LOCK_SH | __rb_fcntl.LOCK_NB)
+    except BaseException:
+        __rb_os.close(__rb_lock)
+        raise RuntimeError('update_in_progress')
+    try:
+        try:
+            __rb_ticket_fd = __rb_os.open(__rb_root / 'maintenance.ticket',
+                __rb_os.O_RDONLY | __rb_os.O_NOFOLLOW)
+        except FileNotFoundError:
+            __rb_ticket_fd = None
+        if __rb_ticket_fd is not None:
+            try:
+                __rb_ticket_info = __rb_os.fstat(__rb_ticket_fd)
+                if (__rb_ticket_info.st_uid != __rb_os.getuid() or
+                        not __rb_stat.S_ISREG(__rb_ticket_info.st_mode) or
+                        __rb_ticket_info.st_mode & 0o077):
+                    raise RuntimeError('invalid_maintenance_ticket')
+                __rb_expected = __rb_os.read(__rb_ticket_fd, 129)
+                __rb_provided = __rb_os.environ.get('RB_UPDATE_LAUNCH_TICKET', '')
+                if (len(__rb_expected) != 65 or __rb_expected[-1:] != b'\\n' or
+                        any(__rb_c not in b'0123456789abcdef' for __rb_c in __rb_expected[:-1]) or
+                        not __rb_secrets.compare_digest(__rb_provided.encode('ascii', 'ignore'),
+                                                        __rb_expected[:-1])):
+                    raise RuntimeError('maintenance_launch_refused')
+            finally:
+                __rb_os.close(__rb_ticket_fd)
+    except BaseException:
+        __rb_os.close(__rb_lock)
+        raise
+    # Retain the descriptor until process exit. Worker subprocesses use the
+    # same entrypoint and acquire their own shared lifetime lock.
+    return __rb_lock
+
+'''
+
+
+def prepare(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
+    """Lifetime lock only, retained for isolated process-lock fixtures."""
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise ValueError('unknown_server_baseline')
+    source = raw.decode('utf-8')
+    if 'Rap Brain update lifetime guard' in source or '__rb_update_guard_v' in source:
+        raise ValueError('already_patched')
+    tree = ast.parse(source)
+    candidates = [n for n in tree.body if isinstance(n, ast.If)
+                  and isinstance(n.test, ast.Compare)
+                  and isinstance(n.test.left, ast.Name)
+                  and n.test.left.id == '__name__'
+                  and len(n.test.ops) == 1 and isinstance(n.test.ops[0], ast.Eq)
+                  and len(n.test.comparators) == 1
+                  and isinstance(n.test.comparators[0], ast.Constant)
+                  and n.test.comparators[0].value == '__main__']
+    if len(candidates) != 1 or candidates[0] is not tree.body[-1]:
+        raise ValueError('unsupported_entrypoint')
+    main = candidates[0]
+    if not main.body or main.col_offset != 0 or main.body[0].lineno <= main.lineno:
+        raise ValueError('unexpected_entrypoint_body')
+    lines = source.splitlines(keepends=True)
+    first_line = lines[main.body[0].lineno - 1]
+    indent = first_line[:len(first_line) - len(first_line.lstrip(' \t'))]
+    if not indent or len(indent) > 8 or main.body[0].col_offset != len(indent.expandtabs(8)):
+        raise ValueError('unexpected_entrypoint_indentation')
+    # The only generated change is the guard declaration and the first
+    # statement in __main__. No SQL, routes, lyrics or other code is rewritten.
+    lines.insert(main.body[0].lineno - 1, indent + '__rb_guard_fd = __rb_update_guard_v2()\n')
+    lines.insert(main.lineno - 1, GUARD)
+    candidate = ''.join(lines).encode('utf-8')
+    compile(candidate, 'server.py', 'exec')
+    return candidate
+
+
+POST_GATE = '''# Rap Brain maintenance HTTP admission gate v3.
+_rb_original_do_post_v2 = Handler.do_POST
+_rb_original_do_get_v3 = Handler.do_GET
+def _rb_guarded_http_v3(self, original, method):
+    import fcntl as __rb_fcntl
+    import os as __rb_os
+    import stat as __rb_stat
+    from pathlib import Path as __rb_Path
+    __rb_state = (__rb_Path.home() / 'Downloads' /
+                  'RapBrainManagerBackups' / 'secure-update')
+    __rb_fd = __rb_os.open(__rb_state / 'admission.lock',
+                          __rb_os.O_CREAT | __rb_os.O_RDWR | __rb_os.O_NOFOLLOW, 0o600)
+    try:
+        __rb_info = __rb_os.fstat(__rb_fd)
+        if (__rb_info.st_uid != __rb_os.getuid() or
+                not __rb_stat.S_ISREG(__rb_info.st_mode) or
+                __rb_info.st_mode & 0o077):
+            raise RuntimeError('unsafe_admission_lock')
+        try:
+            __rb_fcntl.flock(__rb_fd, __rb_fcntl.LOCK_SH | __rb_fcntl.LOCK_NB)
+        except BlockingIOError:
+            return self.send({'error': 'update_in_progress'}, 503)
+        if __rb_os.path.lexists(__rb_state / 'maintenance.ticket'):
+            if method != 'GET' or self.path.split('?', 1)[0] != '/api/status':
+                return self.send({'error': 'update_in_progress'}, 503)
+        return original(self)
+    finally:
+        __rb_os.close(__rb_fd)
+
+def _rb_guarded_do_post_v3(self):
+    return _rb_guarded_http_v3(self, _rb_original_do_post_v2, 'POST')
+
+def _rb_guarded_do_get_v3(self):
+    return _rb_guarded_http_v3(self, _rb_original_do_get_v3, 'GET')
+
+Handler.do_POST = _rb_guarded_do_post_v3
+Handler.do_GET = _rb_guarded_do_get_v3
+
+'''
+
+
+def prepare_admission(raw, expected_sha256=EXPECTED_SOURCE_SHA256):
+    """Prepare a pinned isolated server with lifetime and POST admission gates."""
+    candidate = prepare(raw, expected_sha256)
+    source = candidate.decode('utf-8')
+    tree = ast.parse(source)
+    handlers = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == 'Handler']
+    if len(handlers) != 1:
+        raise ValueError('unsupported_http_handler')
+    handler = handlers[0]
+    posts = [n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == 'do_POST']
+    gets = [n for n in handler.body if isinstance(n, ast.FunctionDef) and n.name == 'do_GET']
+    if (len(posts) != 1 or len(gets) != 1 or not posts[0].body or
+            not isinstance(posts[0].body[0], ast.Try)):
+        raise ValueError('unsupported_post_flow')
+    post = posts[0]
+    lines = source.splitlines(keepends=True)
+    if (handler.col_offset != 0 or len(handler.bases) != 1 or
+            not isinstance(handler.bases[0], ast.Name) or
+            handler.bases[0].id != 'BaseHTTPRequestHandler' or
+            post.body[0].lineno <= post.lineno):
+        raise ValueError('unsupported_post_format')
+    # Wrap each complete HTTP handler, including in-flight GET writes. The
+    # updater will take admission.lock exclusively, create the marker, then
+    # release the short admission lock before stopping the idle parent.
+    # Only GET /api/status may run during maintenance; every POST is blocked.
+    lines.insert(handler.end_lineno, POST_GATE)
+    output = ''.join(lines).encode('utf-8')
+    compile(output, 'server.py', 'exec')
+    return output
+
+
+def prepare_copy(source, destination):
+    source = Path(source).absolute()
+    destination = Path(destination).absolute()
+    if source.is_symlink() or not source.is_file() or destination.exists():
+        raise ValueError('unsafe_source_or_destination')
+    if destination.is_relative_to(source.parent) or destination.parent.is_symlink():
+        raise ValueError('output_must_be_separate')
+    candidate = prepare_admission(source.read_bytes())
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open('xb') as stream:
+        stream.write(candidate)
+    return hashlib.sha256(candidate).hexdigest()
