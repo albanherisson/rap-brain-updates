@@ -216,14 +216,15 @@ class InstallTest(unittest.TestCase):
                 calls = []
                 def fake(args, **kwargs):
                     calls.append(args)
-                    return type("Result", (), {"returncode": 1 if fail_new and len(calls) == 2 else 0})()
+                    return type("Result", (), {"returncode": 5 if fail_new and len(calls) == 2 else 0})()
                 with patch("mac_install_agent.platform.system", return_value="Darwin"), \
                      patch("mac_install_agent.keychain_token", return_value="github_pat_public"), \
                      patch("mac_install_agent.private_keychain_token", return_value="github_pat_private"), \
                      patch("mac_install_agent.REVIEWED_INSTALLED_SHA", hashes), \
                      patch("mac_install_agent.ollama_executable", return_value=Path("/opt/homebrew/bin/ollama")):
                     if fail_new:
-                        with self.assertRaisesRegex(RuntimeError, "ancien agent restauré"):
+                        with self.assertRaisesRegex(RuntimeError,
+                                                    r"redémarrage launchd \(code 5\).*ancien agent restauré"):
                             upgrade_manager_lab(home=home, source=source, call=fake)
                     else:
                         upgrade_manager_lab(home=home, source=source, call=fake)
