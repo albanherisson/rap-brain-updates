@@ -1,5 +1,7 @@
-import plistlib
+import errno
 import hashlib
+import plistlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -272,9 +274,16 @@ class InstallTest(unittest.TestCase):
                                  b"previous mac_bridge.py" if fail_new else b"new bridge")
                 self.assertEqual((data / MANAGER_INVENTORY_FILE).exists(), not fail_new)
 
-    def test_manager_process_upgrade_restores_both_scripts(self):
-        for fail_new in (False, True):
-            with tempfile.TemporaryDirectory() as root:
+    def test_manager_process_upgrade_retries_eio_and_restores_both_scripts(self):
+        cases = (
+            ("success", [0], [], 0, None),
+            ("transient EIO", [errno.EIO, errno.EIO, 0], [], 2, None),
+            ("persistent EIO", [errno.EIO] * 11, [errno.EIO, 0], 11, "code 5"),
+            ("other failure", [13], [0], 0, "code 13"),
+            ("interrupted retry", [errno.EIO, KeyboardInterrupt()], [0], 1, "KeyboardInterrupt"),
+        )
+        for label, starts, restores, delays, failure in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as root:
                 home, source = Path(root) / "home", Path(root) / "source"
                 data, agent = paths(home)
                 data.mkdir(parents=True)
@@ -290,25 +299,41 @@ class InstallTest(unittest.TestCase):
                     (source / name).write_bytes(("new " + name).encode())
                 agent.write_bytes(plistlib.dumps(plist(data, sys.executable,
                                                           Path("/opt/homebrew/bin/ollama"))))
+                before = agent.read_bytes()
                 calls = []
+                versions = []
+                results = iter(starts + restores)
+
                 def fake(args, **kwargs):
                     calls.append(args)
-                    return type("Result", (), {"returncode": 5 if fail_new and len(calls) == 2 else 0})()
+                    if args[1] == "bootout":
+                        return subprocess.CompletedProcess(args, 0)
+                    versions.append(tuple((data / name).read_bytes()
+                                          for name in ("mac_bridge.py", MANAGER_INVENTORY_FILE)))
+                    result = next(results)
+                    if isinstance(result, KeyboardInterrupt):
+                        raise result
+                    return subprocess.CompletedProcess(args, result)
+
                 with patch("mac_install_agent.platform.system", return_value="Darwin"), \
                      patch("mac_install_agent.keychain_token", return_value="github_pat_public"), \
                      patch("mac_install_agent.private_keychain_token", return_value="github_pat_private"), \
                      patch("mac_install_agent.MANAGER_INVENTORY_INSTALLED_SHA", hashes), \
-                     patch("mac_install_agent.ollama_executable", return_value=Path("/opt/homebrew/bin/ollama")):
-                    if fail_new:
-                        with self.assertRaisesRegex(RuntimeError, r"redémarrage launchd \(code 5\).*ancien agent restauré"):
+                     patch("mac_install_agent.ollama_executable", return_value=Path("/opt/homebrew/bin/ollama")), \
+                     patch("mac_install_agent.time.sleep") as sleep:
+                    if failure:
+                        with self.assertRaisesRegex(RuntimeError, rf"redémarrage launchd \({failure}\).*ancien agent restauré"):
                             upgrade_manager_process(home=home, source=source, call=fake)
                     else:
                         upgrade_manager_process(home=home, source=source, call=fake)
-                self.assertEqual(len(calls), 3 if fail_new else 2)
-                self.assertEqual((data / "mac_bridge.py").read_bytes(),
-                                 b"old mac_bridge.py" if fail_new else b"new mac_bridge.py")
-                self.assertEqual((data / MANAGER_INVENTORY_FILE).read_bytes(),
-                                 b"old mac_manager_inventory.py" if fail_new else b"new mac_manager_inventory.py")
+                new = (b"new mac_bridge.py", b"new mac_manager_inventory.py")
+                old = (b"old mac_bridge.py", b"old mac_manager_inventory.py")
+                self.assertEqual(agent.read_bytes(), before)
+                self.assertEqual([args[1] for args in calls], ["bootout"] + ["bootstrap"] * len(starts + restores))
+                self.assertEqual(sleep.call_count, delays)
+                self.assertEqual(versions, [new] * len(starts) + [old] * len(restores))
+                self.assertEqual(tuple((data / name).read_bytes() for name in ("mac_bridge.py", MANAGER_INVENTORY_FILE)),
+                                 old if failure else new)
 
 
 if __name__ == "__main__":

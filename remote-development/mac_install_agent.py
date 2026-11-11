@@ -2,6 +2,7 @@
 """Install the bounded Rap Brain pilot as a per-user macOS LaunchAgent."""
 
 import argparse
+import errno
 import hashlib
 import os
 import platform
@@ -9,6 +10,7 @@ import plistlib
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from mac_bridge import keychain_token
@@ -515,6 +517,18 @@ def upgrade_manager_inventory(home=None, source=None, call=subprocess.run):
     return LABEL
 
 
+def bootstrap_after_bootout(domain, agent, call):
+    command = ["/bin/launchctl", "bootstrap", domain, str(agent)]
+    # launchd may briefly retain the service label after a successful bootout.
+    for attempt in range(11):
+        if attempt:
+            time.sleep(1)
+        result = call(command, capture_output=True, text=True, timeout=20, check=False)
+        if result.returncode != errno.EIO:
+            break
+    return result
+
+
 def upgrade_manager_process(home=None, source=None, call=subprocess.run):
     """Add a coarse read-only process census to the known inventory agent."""
     if platform.system() != "Darwin":
@@ -556,16 +570,14 @@ def upgrade_manager_process(home=None, source=None, call=subprocess.run):
             stage = "remplacement de " + path.name
             replace_owned(path, (source / path.name).read_bytes(), 0o600)
         stage = "redémarrage launchd"
-        started = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
-                       capture_output=True, text=True, timeout=20, check=False)
+        started = bootstrap_after_bootout(domain, agent, call)
         if started.returncode:
             raise RuntimeError("code " + str(started.returncode))
-    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+    except (RuntimeError, OSError, subprocess.TimeoutExpired, KeyboardInterrupt) as exc:
         detail = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
         for path, content in old.items():
             replace_owned(path, content, 0o600)
-        restored = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
-                        capture_output=True, text=True, timeout=20, check=False)
+        restored = bootstrap_after_bootout(domain, agent, call)
         if restored.returncode:
             raise RuntimeError("Retour arrière écrit, relance manuelle nécessaire ; échec à l'étape " +
                                stage + " (" + detail + ")") from None
