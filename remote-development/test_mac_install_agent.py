@@ -9,10 +9,47 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mac_install_agent import FILES, PRIVATE_FILE, REVIEWED_FILE, MANAGER_LAB_FILE, MANAGER_INVENTORY_FILE, install, legacy_plist, paths, plist, put_new_or_same, upgrade, upgrade_private_trial, upgrade_source_validation, upgrade_reviewed_test, upgrade_manager_lab, upgrade_manager_inventory, upgrade_manager_process
-from mac_install_agent import upgrade_manager_remote_update_trial
+from mac_install_agent import upgrade_manager_install_requests, upgrade_manager_remote_update_trial
 
 
 class InstallTest(unittest.TestCase):
+    def test_remote_install_upgrade_rolls_back_added_files_and_allows_repeat(self):
+        for fail in (True, False):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as root:
+                home, source = Path(root) / "home", Path(root) / "source"
+                data, agent = paths(home)
+                data.mkdir(parents=True)
+                agent.parent.mkdir(parents=True)
+                source.mkdir()
+                (data / "mac_bridge.py").write_bytes(b"old")
+                (source / "mac_bridge.py").write_bytes(b"new")
+                (source / "manager_remote_request.py").write_bytes(b"new module")
+                agent.write_bytes(plistlib.dumps(plist(data, sys.executable)))
+                calls = []
+                codes = iter([0, 13, 0] if fail else [0, 0])
+                def fake(args, **kwargs):
+                    calls.append(args[1])
+                    return subprocess.CompletedProcess(args, next(codes))
+                with patch("mac_install_agent.platform.system", return_value="Darwin"), \
+                     patch("mac_install_agent.ollama_executable", return_value=None), \
+                     patch("mac_install_agent.keychain_token"), \
+                     patch("mac_install_agent.private_keychain_token"), \
+                     patch("mac_install_agent.REMOTE_TRIAL_INSTALLED_SHA",
+                           {"mac_bridge.py": hashlib.sha256(b"old").hexdigest()}), \
+                     patch("mac_install_agent.REMOTE_INSTALL_BRIDGE_SHA", hashlib.sha256(b"new").hexdigest()), \
+                     patch("mac_install_agent.REMOTE_INSTALL_FILES",
+                           {"manager_remote_request.py": hashlib.sha256(b"new module").hexdigest()}):
+                    if fail:
+                        with self.assertRaisesRegex(RuntimeError, "ancien agent restauré"):
+                            upgrade_manager_install_requests(home, source, call=fake)
+                        self.assertEqual(calls, ["bootout", "bootstrap", "bootstrap"])
+                    else:
+                        upgrade_manager_install_requests(home, source, call=fake)
+                        upgrade_manager_install_requests(home, source, call=fake)
+                        self.assertEqual(calls, ["bootout", "bootstrap"])
+                self.assertEqual((data / "mac_bridge.py").read_bytes(), b"old" if fail else b"new")
+                self.assertEqual((data / "manager_remote_request.py").exists(), not fail)
+
     def test_remote_trial_upgrade_checks_incoming_hash_and_only_replaces_bridge(self):
         with tempfile.TemporaryDirectory() as root:
             home, source = Path(root) / "home", Path(root) / "source"
