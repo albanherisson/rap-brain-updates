@@ -24,6 +24,10 @@ CURRENT_SHA = {"mac_bridge.py": "803dbc3cd5296d64192b6e6c2cd83307eaf82288da2cea9
 PRIVATE_TRIAL_SHA = {"mac_bridge.py": "e0d4dcbd7b24a3ccf57179bd03d47dd50ccf14255dc34c02ad456e9ce70b4c88",
                      "mac_preflight.py": "ab32901dc7484ecafeab1d54985119763eb07e00d1e2e9a5e1c4ef51b719546b",
                      PRIVATE_FILE: "7f6c347bb7055140aceaedb7eee83452b564b8af00a3c9837f35f7939a8ac03b"}
+SOURCE_VALIDATION_SHA = {"mac_bridge.py": "c766e84bedf2d0ae23444080ad8eae843adf41be46e1db8a15ccfbbbf02ae2fe",
+                         "mac_preflight.py": "ab32901dc7484ecafeab1d54985119763eb07e00d1e2e9a5e1c4ef51b719546b",
+                         PRIVATE_FILE: "1484d5fec6ff591bc5ce02dc66d5c6af67735e1151c1aedf9a4fe1d12795184a"}
+REVIEWED_FILE = "mac_reviewed_test_trial.py"
 LEGACY_SHA = {"mac_bridge.py": "803dbc3cd5296d64192b6e6c2cd83307eaf82288da2cea943461ce5089c2014a",
               "mac_preflight.py": "974ffefde845f8f763e57bd98db0e07142f1b9f699667e4a8e373b5c139cccf4"}
 
@@ -313,6 +317,66 @@ def upgrade_source_validation(home=None, source=None, call=subprocess.run):
     return LABEL
 
 
+def upgrade_reviewed_test(home=None, source=None, call=subprocess.run):
+    """Upgrade the pinned source-validation agent, restoring it if launchd fails."""
+    if platform.system() != "Darwin":
+        raise RuntimeError("Mise à niveau réservée à macOS")
+    home = Path.home() if home is None else Path(home)
+    source = Path(__file__).resolve().parent if source is None else Path(source)
+    data, agent = paths(home)
+    if data.is_symlink() or agent.is_symlink() or not agent.is_file():
+        raise RuntimeError("Agent installé absent ou remplacé")
+    old = {}
+    for name, expected in SOURCE_VALIDATION_SHA.items():
+        path = data / name
+        if path.is_symlink() or not path.is_file() or sha(path) != expected:
+            raise RuntimeError("Version installée du pont inattendue : arrêt")
+        if name != "mac_preflight.py":
+            old[path] = path.read_bytes()
+    reviewed = data / REVIEWED_FILE
+    if reviewed.exists() or reviewed.is_symlink():
+        raise RuntimeError("Tests revus déjà installés : aucun remplacement")
+    for name in ("mac_bridge.py", PRIVATE_FILE, REVIEWED_FILE):
+        incoming = source / name
+        if incoming.is_symlink() or not incoming.is_file():
+            raise RuntimeError("Nouvelle source du pont absente ou remplacée")
+    try:
+        definition = plistlib.loads(agent.read_bytes())
+    except ValueError:
+        raise RuntimeError("Plist installé illisible") from None
+    arguments = definition.get("ProgramArguments") if isinstance(definition, dict) else None
+    if (not isinstance(arguments, list) or len(arguments) != 3 or
+            not isinstance(arguments[0], str) or
+            definition != plist(data, arguments[0], ollama_executable(home))):
+        raise RuntimeError("Identité de l'agent installé inattendue")
+    keychain_token()
+    private_keychain_token()
+    domain = "gui/" + str(os.getuid())
+    stopped = call(["/bin/launchctl", "bootout", domain + "/" + LABEL],
+                   capture_output=True, text=True, timeout=20, check=False)
+    if stopped.returncode:
+        raise RuntimeError("Agent actuel non arrêté : aucun fichier modifié")
+    try:
+        put_new_or_same(reviewed, (source / REVIEWED_FILE).read_bytes(), 0o600)
+        for path in old:
+            replace_owned(path, (source / path.name).read_bytes(), 0o600)
+        started = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
+                       capture_output=True, text=True, timeout=20, check=False)
+        if started.returncode:
+            raise RuntimeError("Nouvel agent non démarré")
+    except (RuntimeError, OSError, subprocess.TimeoutExpired):
+        for path, content in old.items():
+            replace_owned(path, content, 0o600)
+        if reviewed.is_file() and not reviewed.is_symlink():
+            reviewed.unlink()
+        restored = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
+                        capture_output=True, text=True, timeout=20, check=False)
+        if restored.returncode:
+            raise RuntimeError("Retour arrière écrit, relance manuelle nécessaire") from None
+        raise RuntimeError("Mise à niveau refusée ; ancien agent restauré") from None
+    return LABEL
+
+
 def main():
     parser = argparse.ArgumentParser(description="Installation de la veille Rap Brain P0")
     actions = parser.add_mutually_exclusive_group(required=True)
@@ -320,6 +384,7 @@ def main():
     actions.add_argument("--upgrade", action="store_true")
     actions.add_argument("--upgrade-private-trial", action="store_true")
     actions.add_argument("--upgrade-source-validation", action="store_true")
+    actions.add_argument("--upgrade-reviewed-test", action="store_true")
     actions.add_argument("--stop", action="store_true")
     args = parser.parse_args()
     try:
@@ -333,6 +398,8 @@ def main():
             print("Veille privée en lecture seule : " + upgrade_private_trial())
         elif args.upgrade_source_validation:
             print("Validation de sources activée : " + upgrade_source_validation())
+        elif args.upgrade_reviewed_test:
+            print("Tests revus activés : " + upgrade_reviewed_test())
         else:
             stop()
             print("Veille arrêtée. Fichiers et jeton conservés.")
