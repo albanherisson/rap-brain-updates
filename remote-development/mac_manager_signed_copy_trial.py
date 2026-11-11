@@ -150,7 +150,7 @@ def data_snapshot(data):
 
 
 def run_trial(home, root):
-    from app_bundle_backup import inventory
+    from app_bundle_backup import _copy_verified, inventory
     from creative_release import Refused
     from creative_transaction import safe_path
     from manager_offline_lifecycle import MacOfflineManagerLifecycle
@@ -177,13 +177,12 @@ def run_trial(home, root):
     else:
         raise ValueError("test_release_accepted_by_production")
 
-    for expected in ("committed", "rolled_back"):
-        print("Essai copie : " + expected, flush=True)
+    for expected, stage in (("committed", "installation"), ("rolled_back", "retour arrière")):
+        print("Essai sur copie : " + stage, flush=True)
         branch = root / expected
         branch.mkdir(mode=0o700)
         copy_app = branch / "Manager.app"
-        run_checked(["/usr/bin/ditto", str(app), str(copy_app)], "manager_copy_failed")
-        require(inventory(copy_app) == original_app, "manager_copy_changed")
+        _copy_verified(app, copy_app, original_app)
         run_checked(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(copy_app)],
                     "original_copy_signature_invalid")
         copy_resources = copy_app / "Contents" / "Resources"
