@@ -20,6 +20,9 @@ import zipfile
 REPO = "https://raw.githubusercontent.com/albanherisson/rap-brain-updates/"
 HELPER_URL = REPO + "39a5718e93d3f9520b4cdeab105cdf7e3f332161/manager-postcommit/repair-3.zip"
 HELPER_SHA = "378a0f7346814bdff0c885b6748ef6ab8655091d718331eb649a2233a5cda11b"
+BACKUP_URL = (REPO + "15638ef4c6c93f266c208e6ed9d20049b14d7a36"
+              "/manager-updater/locale_v4/app_bundle_backup.py")
+BACKUP_SHA = "54a557d0f90fd74e1d832be12e27a980ae754e2160c5e0e0c5eb3122aed23fd2"
 SERVER_SHA = "4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e16c"
 LAUNCHER_SHA = "dac886a0f3a311b8067c5d9a44a438fc19f6c4eb1ceb69b7c4ffd3dabf9b12ac"
 NATIVE_SHA = "00192215cb65a7844555e63d0178f456f3fd8748cbe9c3564bab1380341c1bad"
@@ -53,26 +56,34 @@ def run_checked(args, error, timeout=90):
     return result.stdout
 
 
+def fetch_bytes(url, limit):
+    with urllib.request.urlopen(url, timeout=20) as response:
+        require(response.geturl() == url, "download_redirected")
+        raw = response.read(limit + 1)
+    require(0 < len(raw) <= limit, "download_size")
+    return raw
+
+
 def fetch_helper():
-    with urllib.request.urlopen(HELPER_URL, timeout=20) as response:
-        require(response.geturl() == HELPER_URL, "helper_download_redirected")
-        outer = response.read(200001)
-    require(len(outer) <= 200000, "helper_download_size")
+    outer = fetch_bytes(HELPER_URL, 200000)
     with zipfile.ZipFile(io.BytesIO(outer)) as archive:
         require(archive.getinfo("helper.zip").file_size <= 150000, "helper_zip_size")
         return archive.read("helper.zip")
 
 
-def stage_helper(raw, folder):
+def stage_helper(raw, backup, folder):
     require(digest(raw) == HELPER_SHA, "helper_zip_sha256")
+    require(digest(backup) == BACKUP_SHA, "backup_reader_sha256")
     folder.mkdir(mode=0o700)
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         for entry in archive.infolist():
             require(re.fullmatch(r"helper/[A-Za-z_][A-Za-z_0-9]*\.(py|swift)", entry.filename)
                     and 0 < entry.file_size <= 250000, "helper_zip_layout")
             path = folder / entry.filename.split("/")[1]
+            # Reuse the locale repair's exact Finder icon support in this trial.
+            contents = backup if path.name == "app_bundle_backup.py" else archive.read(entry)
             with path.open("xb") as target:
-                target.write(archive.read(entry))
+                target.write(contents)
 
 
 def sign_ephemeral(message, folder):
@@ -232,15 +243,17 @@ def run_trial(home, root):
     return {"status": "pass", "copy_install": "committed", "copy_rollback": "rolled_back",
             "macos_codesign": "verified", "health_failure": "simulated",
             "synthetic_data_preserved": True, "active_code_unchanged": True,
+            "finder_icon_present_and_preserved": "Icon\r" in original_app,
             "production_key_used": False}
 
 
 def main():
     require(sys.platform == "darwin", "macos_required")
     helper = fetch_helper()
+    backup = fetch_bytes(BACKUP_URL, 20000)
     with tempfile.TemporaryDirectory(prefix="rapbrain-manager-copy-") as temporary:
         root = Path(temporary).resolve()
-        stage_helper(helper, root / "helper")
+        stage_helper(helper, backup, root / "helper")
         sys.path.insert(0, str(root / "helper"))
         result = run_trial(Path.home().resolve(), root)
     print(json.dumps(result, sort_keys=True))
