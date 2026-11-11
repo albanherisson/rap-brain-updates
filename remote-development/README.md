@@ -84,3 +84,7 @@ Le pilote `pilot-004` a confirmé qu'Ollama est visible sous launchd. Avant de s
 Même dans un dépôt privé, les fichiers `private_data`, bases, sauvegardes, journaux, clés et configurations nécessitent une sauvegarde séparée et ne sont pas des sources à pousser. La catégorie `source_candidate` n'est pas une approbation automatique : elle doit passer une revue des secrets avant toute synchronisation.
 
 Le dépôt `rap-brain-source` a été créé en privé avec des exclusions initiales. L'inventaire réel a compté 23 sources candidates dans Rap Brain, 13 dans le Manager actif et 2 310 dans les sauvegardes. Les sauvegardes sont exclues de l'étape suivante. `mac_prepare_source_review.py` crée sur le Bureau une archive locale des seuls fichiers source des deux installations actives, après vérification du hash de `server.py`, des tailles, des liens et de motifs de secrets courants. Un soupçon de secret arrête la création. L'archive ne part pas automatiquement sur GitHub : elle doit être inspectée avant tout import. Le filtrage automatique ne garantit pas l'absence de secret.
+
+### Résultat du pilote 009
+
+Le Mac a publié `results/pilot-009.json` avec `status: pass` : 23 fichiers et 375 259 octets vérifiés, 16 fichiers Python analysés, deux tests revus réussis, copie temporaire supprimée et Ollama disponible. Le code candidat a été exécuté uniquement dans la copie temporaire pour ces deux tests. L'application installée et le Manager n'ont pas été modifiés.
