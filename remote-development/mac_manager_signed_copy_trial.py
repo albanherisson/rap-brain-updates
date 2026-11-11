@@ -4,10 +4,15 @@
 import base64
 from contextlib import closing
 import hashlib
+import http.client
 import io
 import json
+import os
 from pathlib import Path
 import re
+import secrets
+import signal
+import socket
 import sqlite3
 import subprocess
 import sys
@@ -30,6 +35,12 @@ DASHBOARD_SHA = "9eb2df0a59f5e7638de6251808ea2f64d4a9051d5c169972f3a698b858b4e3a
 MEMBER = "app/dashboard_beta14.html"
 BADGE = b'<span class="versionpill">Beta 14</span>'
 TRIAL_BADGE = b'<span class="versionpill">Beta 14 - Essai P0</span>'
+RUNTIME_SOURCES = {
+    "server.py": SERVER_SHA,
+    "creative_engine.py": "b770bdf034caa600f75497325f80759d4f372258fa0e911e28f29d214abe85f3",
+    "creative_rag.py": "d43f521c43658fce6b3a7de0463efc3fe4d783c6e02b74a5ccd8266a7d35bfca",
+    "rhyme_validator.py": "e04be3025b47035e68bfe613798a669c0890cdd402299effb51101fb4578be72",
+}
 SWIFT_SIGN = """
 import CryptoKit
 import Foundation
@@ -247,22 +258,153 @@ def run_trial(home, root):
             "production_key_used": False}
 
 
+def local_json(port, method, path, *, body=None, headers=None):
+    with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=4)) as connection:
+        connection.request(method, path, body=body, headers=headers or {})
+        response = connection.getresponse()
+        raw = response.read(4097)
+        require(len(raw) <= 4096, "runtime_response_oversize")
+        return response.status, json.loads(raw)
+
+
+def wait_for_runtime(process, port, token):
+    from authenticated_runtime_client import read_runtime_proof
+    from creative_release import Refused
+
+    last_error = "runtime_not_ready"
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline:
+        require(process.poll() is None, "runtime_exited_before_ready")
+        try:
+            return read_runtime_proof(port, token, expected_parent_pid=process.pid)
+        except Refused as error:
+            last_error = str(error)
+            time.sleep(0.2)
+    raise ValueError(last_error)
+
+
+def signal_trial_group(process, signal_number):
+    # Popen starts a new session for this exact copy and its worker.
+    try:
+        os.killpg(process.pid, signal_number)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def exercise_runtime(source, workspace):
+    from authenticated_runtime_client import assert_owned_listener
+
+    data = workspace / "data"
+    state = workspace / "Downloads/RapBrainManagerBackups/secure-update"
+    state.mkdir(mode=0o700, parents=True)
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as address:
+        address.bind(("127.0.0.1", 0))
+        port = address.getsockname()[1]
+    require(port not in (8765, 11434), "runtime_port_not_isolated")
+    token = secrets.token_hex(32)
+    env = {"HOME": str(workspace), "TMPDIR": str(workspace), "PATH": "/usr/bin:/bin",
+           "PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1",
+           "RAP_BRAIN_DATA": str(data), "RAP_BRAIN_PORT": str(port),
+           "OLLAMA_URL": "http://127.0.0.1:1", "RB_UPDATE_PROBE_TOKEN": token}
+    with (workspace / "server-output.log").open("xb") as log:
+        process = subprocess.Popen([sys.executable, "-s", "-B", str(source / "server.py")],
+                                   cwd=source, env=env, stdin=subprocess.DEVNULL,
+                                   stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        completed = False
+        try:
+            print("Essai serveur : démarrage et contrôle de santé", flush=True)
+            proof = wait_for_runtime(process, port, token)
+            require(os.getpgid(proof["worker_pid"]) == process.pid, "runtime_worker_group_mismatch")
+            require(local_json(port, "GET", "/api/health")
+                    == (200, {"ok": True, "worker": "separate_process"}), "runtime_health_failed")
+            require(local_json(port, "GET", "/api/manager-update-proof")
+                    == (404, {"error": "not_found"}), "runtime_proof_unprotected")
+
+            track = {"artist": "Rap Brain P0", "title": "Temporary runtime trial",
+                     "lyrics": "Synthetic test text"}
+            assert_owned_listener(port, process.pid)
+            status, saved = local_json(port, "POST", "/api/tracks", body=json.dumps(track),
+                                       headers={"Content-Type": "application/json"})
+            require(status in (200, 201) and type(saved) is dict
+                    and type(saved.get("id")) is int and saved["id"] > 0, "runtime_track_write_failed")
+            status, found = local_json(port, "GET", f"/api/tracks/{saved['id']}")
+            require(status == 200 and all(found.get("track", {}).get(key) == value
+                    for key, value in track.items()), "runtime_track_read_failed")
+
+            print("Essai serveur : arrêt authentifié", flush=True)
+            ticket = secrets.token_hex(32)
+            marker = state / "maintenance.ticket"
+            fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "w", encoding="ascii") as stream:
+                stream.write(ticket + "\n")
+            assert_owned_listener(port, process.pid)
+            require(local_json(port, "POST", "/api/manager-update-stop", headers={
+                "X-RB-Update-Token": token, "X-RB-Update-Ticket": ticket,
+            }) == (202, {"stopping": True}), "runtime_shutdown_refused")
+            require(process.wait(timeout=12) == 0, "runtime_shutdown_exit_failed")
+            deadline = time.monotonic() + 3
+            while signal_trial_group(process, 0):
+                require(time.monotonic() < deadline, "runtime_worker_still_running")
+                time.sleep(0.1)
+            completed = True
+        finally:
+            if not completed:
+                signal_trial_group(process, signal.SIGTERM)
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    signal_trial_group(process, signal.SIGKILL)
+                    process.wait(timeout=3)
+                if signal_trial_group(process, 0):
+                    signal_trial_group(process, signal.SIGKILL)
+
+    db_path = data / "rapbrain.sqlite3"
+    require(db_path.is_file() and not db_path.is_symlink(), "runtime_database_missing")
+    with closing(sqlite3.connect(db_path.as_uri() + "?mode=ro", uri=True)) as db:
+        require(db.execute("PRAGMA quick_check").fetchall() == [("ok",)], "runtime_database_integrity")
+        require(db.execute("SELECT artist, title, lyrics FROM tracks").fetchall()
+                == [(track["artist"], track["title"], track["lyrics"])], "runtime_database_content")
+
+
+def run_runtime_trial(home, root):
+    from creative_transaction import safe_path
+
+    installed = safe_path(home / "Downloads" / "rap-brain", directory=True)
+    workspace = root / "runtime"
+    source = workspace / "source"
+    source.mkdir(mode=0o700, parents=True)
+    for name, expected in RUNTIME_SOURCES.items():
+        raw = safe_path(installed / name).read_bytes()
+        require(digest(raw) == expected, "runtime_source_changed_" + name.removesuffix(".py"))
+        (source / name).write_bytes(raw)
+    exercise_runtime(source, workspace)
+    require(all(digest(safe_path(installed / name).read_bytes()) == expected
+                for name, expected in RUNTIME_SOURCES.items()), "active_code_changed")
+    return {"status": "pass", "server_health": "verified", "worker_identity": "verified",
+            "synthetic_sqlite": "verified", "graceful_shutdown": "verified",
+            "active_sources_unchanged": True, "production_port_used": False}
+
+
 def main():
     require(sys.platform == "darwin", "macos_required")
+    require(sys.argv[1:] in ([], ["--runtime"]), "invalid_trial_option")
+    trial = run_runtime_trial if sys.argv[1:] else run_trial
     helper = fetch_helper()
     backup = fetch_bytes(BACKUP_URL, 20000)
     with tempfile.TemporaryDirectory(prefix="rapbrain-manager-copy-") as temporary:
         root = Path(temporary).resolve()
         stage_helper(helper, backup, root / "helper")
         sys.path.insert(0, str(root / "helper"))
-        result = run_trial(Path.home().resolve(), root)
+        result = trial(Path.home().resolve(), root)
     print(json.dumps(result, sort_keys=True))
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
+    except (OSError, ValueError, RuntimeError, http.client.HTTPException,
+            sqlite3.Error, subprocess.SubprocessError, zipfile.BadZipFile) as error:
         message = str(error)
         detail = message if re.fullmatch(r"[a-z0-9_]+", message) else type(error).__name__
         print(json.dumps({"status": "failed", "reason": detail}), file=sys.stderr)
