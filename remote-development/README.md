@@ -98,3 +98,7 @@ Il s'agit d'un essai du mécanisme d'activation sur des fichiers source copiés 
 ### Résultat du pilote 010
 
 La première tentative de mise à niveau du pont a été refusée et l'ancien agent restauré (empreinte `4a664f2b…652784c`, laboratoire absent). Après l'ajout d'un diagnostic d'étape à l'installateur, la mise à niveau a réussi. Le Mac a ensuite publié `results/pilot-010.json` avec `status: pass` : 23 fichiers privés vérifiés, trois reprises après interruption, une activation fictive réussie, base SQLite fictive préservée et copie temporaire supprimée. Aucun fichier de l'application ou de la base installées n'a été remplacé par ce pilote.
+
+## Pilote 011 : inventaire du Manager en lecture seule
+
+Le Manager signé et son relais de mise à jour disposent déjà de tests sur copies jetables (41 tests ciblés de mise à jour et 26 de réparation passés localement). Avant de les relier au pont, `manager_inventory` relève uniquement les empreintes de quatre ressources fixes dans les deux emplacements connus du Manager (`~/Applications` et le paquet Beta 14 dans `~/Downloads`) et indique si un dossier de sauvegarde existe. Il n'ouvre ni SQLite ni les contenus de l'utilisateur, ne suit pas de liens symboliques et ne modifie aucun fichier. La tâche `pilot-011` est préparée mais inactive jusqu'à la mise à niveau `--upgrade-manager-inventory` du pont ; la file reste sur `pilot-010`. Ce résultat servira à déterminer quel installateur signé correspond au Manager réellement présent, avant un essai d'installation sur copie complète.
