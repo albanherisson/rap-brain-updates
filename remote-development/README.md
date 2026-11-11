@@ -61,6 +61,12 @@ python3 remote-development/mac_install_agent.py --stop
 
 Le pilote demeure limité à `health_check`. Il faut encore une politique d'exécution sur copies isolées et un canal privé avant de lui confier du code, des analyses ou des journaux.
 
+## Pilote 009 : deux tests revus sur le Mac
+
+Après les contrôles de source et de reprise des pilotes 005 à 008, l'action `reviewed_test_trial` vérifie le commit privé `a0b917cf04ee9f4de8852a1fc093c6691f51ca05`, son manifeste et les empreintes exactes du module et du fichier de test. Elle récupère les 23 sources dans un dossier temporaire, vérifie chaque empreinte et la syntaxe Python, puis exécute uniquement les deux tests `test_rhyme_validator.py`. Le dossier et la sortie brute sont supprimés avant la publication d'un résultat réduit aux empreintes et aux nombres. Le serveur installé et le Manager ne sont pas modifiés.
+
+Le processus de test a une limite de temps et de ressources, mais le dossier temporaire et les variables d'environnement ne constituent pas un bac à sable du système macOS. Cette action n'est autorisée que pour ce code revu et épinglé ; elle n'accepte ni commande ni chemin libre dans la tâche GitHub. Le pilote attend une mise à niveau de l'agent avec `--upgrade-reviewed-test` avant l'activation de la file. L'installateur vérifie les empreintes de l'agent existant et restaure ses scripts précédents si le nouveau démarrage échoue.
+
 ### Ajustement du chemin d'Ollama
 
 Le premier essai du LaunchAgent a traité `pilot-003` mais affiché `ollama_available: false`, alors que le Terminal interactif voyait Ollama. La mise à niveau capture le dossier de l'exécutable trouvé lors de l'installation et configure le `PATH` de l'agent ; elle vérifie aussi les emplacements habituels de l'application macOS. Pour mettre à niveau l'agent P0 déjà installé :
@@ -78,39 +84,3 @@ Le pilote `pilot-004` a confirmé qu'Ollama est visible sous launchd. Avant de s
 Même dans un dépôt privé, les fichiers `private_data`, bases, sauvegardes, journaux, clés et configurations nécessitent une sauvegarde séparée et ne sont pas des sources à pousser. La catégorie `source_candidate` n'est pas une approbation automatique : elle doit passer une revue des secrets avant toute synchronisation.
 
 Le dépôt `rap-brain-source` a été créé en privé avec des exclusions initiales. L'inventaire réel a compté 23 sources candidates dans Rap Brain, 13 dans le Manager actif et 2 310 dans les sauvegardes. Les sauvegardes sont exclues de l'étape suivante. `mac_prepare_source_review.py` crée sur le Bureau une archive locale des seuls fichiers source des deux installations actives, après vérification du hash de `server.py`, des tailles, des liens et de motifs de secrets courants. Un soupçon de secret arrête la création. L'archive ne part pas automatiquement sur GitHub : elle doit être inspectée avant tout import. Le filtrage automatique ne garantit pas l'absence de secret.
-
-### Revue du premier paquet
-
-Le premier paquet produit avant correction contenait 31 fichiers, dont neuf instantanés sous `rap_brain/sauvegardes`. Aucun de ces neuf fichiers n'a été importé. Les 22 fichiers de l'installation active ont été vérifiés et placés sur une branche de revue du dépôt privé (`p0/import-active-source`, PR #1). Le script de préparation exclut désormais aussi le dossier français `sauvegardes`. L'agent de veille reste limité au contrôle de santé ; l'import de code ne déclenche aucune installation locale.
-
-## Essai de lecture du code privé (sans installation)
-
-`mac_private_source_trial.py` lit le manifeste du dépôt privé à l'empreinte `31236459f934145cc20b7274beeaf910c318cee0639325e7496021b0fa3233c7` et le commit `629b95df0cf28e21db941b82a823561d388eac67`. Il exige un jeton fine-grained distinct, limité au seul dépôt privé avec Contents **Read-only**, stocké dans le trousseau sous `com.gns.rapbrain.source.readonly.p0`. Il télécharge les 22 sources dans un dossier temporaire du pont, vérifie leurs tailles et SHA-256, analyse la syntaxe Python sans importer les modules, puis supprime le dossier. Le résultat ne contient ni code, ni données utilisateur, ni jeton. Il ne modifie pas l'application ou le Manager. La veille peut déclencher le même essai après sa mise à niveau contrôlée.
-
-Après création du jeton en lecture seule, le saisir uniquement dans l'invite masquée du Terminal :
-
-```bash
-security add-generic-password -a albanherisson -s com.gns.rapbrain.source.readonly.p0 -l "Rap Brain Source Read Only P0" -w
-python3 mac_private_source_trial.py --check-keychain
-python3 mac_private_source_trial.py --run
-```
-
-La mise à niveau `--upgrade-private-trial` accepte uniquement les empreintes de l'agent déjà installé après le correctif Ollama, vérifie les deux jetons du trousseau et l'identité du plist, arrête la veille, installe le script de lecture privée et le pont étendu, puis relance l'agent. Si le redémarrage échoue, elle restaure l'ancien pont et le relance. La tâche `pilot-005` est préparée mais la file d'attente n'est pas activée avant cette mise à niveau. Cette action reste une lecture et un contrôle de syntaxe sur copie temporaire ; elle ne lance aucun test métier ni installation réelle.
-
-### Résultat du pilote 005
-
-Après correction du jeton du trousseau (le jeton Remote Bridge avait été saisi à la place du jeton Source Read), l'essai ponctuel sur Mac puis la tâche distante `pilot-005` ont tous deux réussi. Le résultat durable `results/pilot-005.json` indique `status: pass`, 22 fichiers et 374 104 octets vérifiés, 15 syntaxes Python validées, `temporary_copy_removed: true` et `ollama_available: true`. L'agent a publié ce résultat sans Terminal ouvert. L'installation active et les données n'ont pas été modifiées. Le pont ne prend en charge que `health_check` et `private_source_trial` ; il ne déploie pas encore de code.
-
-## Pilote 006 : valider un nouveau commit privé
-
-La tâche `pilot-006` utilise le schéma v2 et l'action fermée `source_validate`. Elle fixe le commit privé `a0b917cf04ee9f4de8852a1fc093c6691f51ca05`, le SHA-256 du manifeste `31cab964c01d12f7110f398ca710b372beff013b0f459dbded9effc8e9949adf`, l'empreinte du serveur candidat et une expiration de 72 heures. Ce commit contient 22 sources inchangées et un nouveau fichier de tests hors réseau ; les deux tests passent localement. La veille télécharge uniquement les fichiers listés, vérifie leurs empreintes et leur syntaxe Python, puis supprime la copie. Elle n'importe ni n'exécute le code distant.
-
-`--upgrade-source-validation` accepte uniquement les empreintes des trois scripts installés lors de `pilot-005`, vérifie le plist et les deux jetons, remplace le pont et l'outil de vérification, puis relance la veille. En cas d'échec, les anciens scripts sont restaurés et l'ancien agent est relancé. Le plist et l'application installée ne sont pas modifiés. La tâche est préparée sans changer la file d'attente jusqu'à confirmation de la mise à niveau Mac. Cette étape prouve la validation d'un nouveau candidat ; elle ne constitue pas encore l'exécution de tests Mac sur du code téléchargé ni une installation.
-
-### Résultat du pilote 006
-
-La veille mise à niveau a publié `results/pilot-006.json` avec `status: pass`. Le commit privé candidat `a0b917cf04ee9f4de8852a1fc093c6691f51ca05` et son manifeste ont été vérifiés : 23 fichiers, 375 259 octets, 16 syntaxes Python, copie temporaire supprimée, Ollama disponible. Le nouveau fichier de tests était présent dans le candidat ; ces tests ont été exécutés localement dans l'environnement de développement (2/2), mais la veille Mac n'a effectué qu'une analyse syntaxique, sans exécuter de code téléchargé. L'installation active n'a pas été modifiée.
-
-### Pilotes 007 et 008 : refus puis reprise
-
-`pilot-007` demandait volontairement une empreinte de serveur erronée. La veille a publié `status: version_mismatch` sans champ `private_source`, donc sans lancer le téléchargement privé. La tâche suivante `pilot-008` a publié `status: pass` : 23 fichiers et 375 259 octets vérifiés, 16 syntaxes Python, copie temporaire supprimée. Cela prouve que le refus d'une version inattendue n'empêche pas la veille de traiter ensuite une tâche valide. Ces pilotes n'ont pas exécuté les tests téléchargés ni exercé le retour arrière d'une installation.
