@@ -419,22 +419,30 @@ def upgrade_manager_lab(home=None, source=None, call=subprocess.run):
                    capture_output=True, text=True, timeout=20, check=False)
     if stopped.returncode:
         raise RuntimeError("Agent actuel non arrêté : aucun fichier modifié")
+    stage = "copie du laboratoire"
     try:
         put_new_or_same(manager, (source / MANAGER_LAB_FILE).read_bytes(), 0o600)
+        stage = "remplacement du pont"
         replace_owned(bridge, (source / "mac_bridge.py").read_bytes(), 0o600)
+        stage = "redémarrage launchd"
         started = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
                        capture_output=True, text=True, timeout=20, check=False)
         if started.returncode:
-            raise RuntimeError("Nouvel agent non démarré")
-    except (RuntimeError, OSError, subprocess.TimeoutExpired):
+            raise RuntimeError("code " + str(started.returncode))
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        # Only report the controlled step and error class/code: no paths,
+        # launchctl output or credentials from the host are echoed.
+        detail = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
         replace_owned(bridge, old_bridge, 0o600)
         if manager.is_file() and not manager.is_symlink():
             manager.unlink()
         restored = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
                         capture_output=True, text=True, timeout=20, check=False)
         if restored.returncode:
-            raise RuntimeError("Retour arrière écrit, relance manuelle nécessaire") from None
-        raise RuntimeError("Mise à niveau refusée ; ancien agent restauré") from None
+            raise RuntimeError("Retour arrière écrit, relance manuelle nécessaire ; échec à l'étape " +
+                               stage + " (" + detail + ")") from None
+        raise RuntimeError("Mise à niveau refusée à l'étape " + stage + " (" + detail +
+                           ") ; ancien agent restauré") from None
     return LABEL
 
 
