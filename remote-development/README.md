@@ -88,3 +88,9 @@ Le dépôt `rap-brain-source` a été créé en privé avec des exclusions initi
 ### Résultat du pilote 009
 
 Le Mac a publié `results/pilot-009.json` avec `status: pass` : 23 fichiers et 375 259 octets vérifiés, 16 fichiers Python analysés, deux tests revus réussis, copie temporaire supprimée et Ollama disponible. Le code candidat a été exécuté uniquement dans la copie temporaire pour ces deux tests. L'application installée et le Manager n'ont pas été modifiés.
+
+## Pilote 010 : journal et retour arrière du Manager
+
+L'action `manager_lab_trial` reprend le même commit privé et exige l'empreinte exacte du module `multi_file_trial.py` déjà présent dans les sources du Manager. Elle vérifie toutes les sources, copie les vrais `server.py` et `creative_engine.py` dans un laboratoire temporaire, et crée une base SQLite fictive. Le module du Manager y simule trois interruptions (`before_first`, `after_first`, `after_second`) et une activation réussie. Chaque interruption doit être reprise par un nouveau processus ; le code doit retrouver ses empreintes d'origine et les enregistrements fictifs ajoutés après l'interruption doivent rester présents. La copie et les sorties brutes sont supprimées ; seul un résultat agrégé est publié.
+
+Il s'agit d'un essai du mécanisme d'activation sur des fichiers source copiés et une base fictive, pas d'un déploiement ou d'un test sur la base de l'utilisateur. La tâche ne fournit aucun chemin ni commande libre. Elle reste inactive dans la file jusqu'à la mise à niveau `--upgrade-manager-lab`, qui contrôle les empreintes des quatre scripts installés, garde le plist et peut restaurer l'ancien agent si le redémarrage échoue.
