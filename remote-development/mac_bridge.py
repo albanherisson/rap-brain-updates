@@ -30,6 +30,7 @@ from mac_reviewed_test_trial import (run_reviewed_test, COMMIT as REVIEWED_COMMI
                                      TEST_SHA256 as REVIEWED_TEST_SHA)
 from mac_manager_lab_trial import run_manager_lab, RUNNER_SHA256 as MANAGER_RUNNER_SHA
 from mac_manager_inventory import inspect as inspect_manager, running as manager_running
+from mac_manager_install_request import advance_install_task, parse_install_task
 from pathlib import Path
 
 
@@ -148,6 +149,8 @@ def read_task(task_id, get=request, now=None):
         if action in ("reviewed_test_trial", "manager_lab_trial") and (task["source_commit"], task["manifest_sha256"],
                 task["candidate_server_sha256"]) != (REVIEWED_COMMIT, REVIEWED_MANIFEST, REVIEWED_SERVER):
             raise ValueError("Version des tests revus inattendue")
+    elif schema == "rapbrain-remote-task-v3" and action == "manager_install":
+        parse_install_task(task, now=now)
     else:
         raise ValueError("Action non autorisée")
     expected = task["expected_server_sha256"]
@@ -204,7 +207,7 @@ def run_manager_remote_update_trial(opener=urllib.request.urlopen, spawn=subproc
 def run(task, task_sha, probe=inspect, private_probe=private_trial, private_token=private_keychain_token,
         source_probe=trial_commit, reviewed_probe=run_reviewed_test, manager_probe=run_manager_lab,
         manager_inventory=inspect_manager, manager_process=manager_running,
-        remote_update_trial=run_manager_remote_update_trial):
+        remote_update_trial=run_manager_remote_update_trial, manager_install=advance_install_task):
     info = probe()
     if info["platform"] != "Darwin":
         raise ValueError("Exécution réservée à macOS")
@@ -291,6 +294,22 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
         proof = remote_update_trial()
         result["status"] = proof["status"]
         result["manager_remote_update"] = {**proof, "runner_sha256": REMOTE_MANAGER_RUNNER_SHA}
+    if task["action"] == "manager_install":
+        # The Manager rechecks the signed baseline before a handoff. After a
+        # server update, the old baseline may have legitimately changed.
+        try:
+            outcome = manager_install(task)
+        except ValueError as error:
+            reason = str(error)
+            outcome = {"state": "refused", "reason": reason if re.fullmatch(
+                r"[a-zA-Z0-9_]{1,80}", reason) else "remote_manager_task_refused"}
+        state = outcome["state"]
+        result["status"] = "pass" if state in ("committed", "up_to_date") else state
+        result["manager_install"] = {"sequence": task["sequence"], "state": state}
+        if "reason" in outcome:
+            result["manager_install"]["reason"] = outcome["reason"]
+        if "manager_reopened" in outcome:
+            result["manager_install"]["manager_reopened"] = outcome["manager_reopened"]
     return result
 
 
@@ -310,6 +329,8 @@ def watch_once(token, get=request, probe=inspect, remote_update_trial=run_manage
         return task_id, "already_published"
     task, task_sha = read_task(task_id, get=get)
     result = run(task, task_sha, probe=probe, remote_update_trial=remote_update_trial)
+    if result["status"] == "pending":
+        return task_id, "pending"
     publish(task_id, result, token, get=get)
     return task_id, result["status"]
 

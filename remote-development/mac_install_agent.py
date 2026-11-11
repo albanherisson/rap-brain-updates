@@ -46,6 +46,12 @@ MANAGER_PROCESS_INSTALLED_SHA = {**MANAGER_INVENTORY_INSTALLED_SHA,
                                  "mac_bridge.py": "af2b737a6f5b2050be6604b19663b56169b81b4eaf8bf11e5345969bb1f7a6df",
                                  MANAGER_INVENTORY_FILE: "a28ab8cd06b7222377e0a08bc22b85d63ea49f71b4a397330db65d5bf3d5b47e"}
 REMOTE_MANAGER_BRIDGE_SHA = "6fadaf071ff4a926b0d4cd5eadae95aaf88dc0e74ab28acca43f0ac99f18b760"
+REMOTE_TRIAL_INSTALLED_SHA = {**MANAGER_PROCESS_INSTALLED_SHA, "mac_bridge.py": REMOTE_MANAGER_BRIDGE_SHA}
+REMOTE_INSTALL_BRIDGE_SHA = "0567ee64b6c809c09821b858ab79a637749b2f316f05548f66543acac3eae01e"
+REMOTE_INSTALL_FILES = {
+    "mac_manager_install_request.py": "59932d451cd67e8537a66130882e8b2a007ed1eba59b53c7e711b81b413d4828",
+    "manager_remote_request.py": "bef588df37337ad220d4916057f9c02cd2a5e971ab8f7018a8bda95010031d31",
+}
 LEGACY_SHA = {"mac_bridge.py": "803dbc3cd5296d64192b6e6c2cd83307eaf82288da2cea943461ce5089c2014a",
               "mac_preflight.py": "974ffefde845f8f763e57bd98db0e07142f1b9f699667e4a8e373b5c139cccf4"}
 
@@ -533,7 +539,7 @@ def bootstrap_after_bootout(domain, agent, call):
     return result
 
 
-def upgrade_manager_bridge(home, source, call, installed, incoming):
+def upgrade_manager_bridge(home, source, call, installed, incoming, *, additions=None):
     """Replace the named files of a known agent and restore them if restart fails."""
     if platform.system() != "Darwin":
         raise RuntimeError("Mise à niveau réservée à macOS")
@@ -542,21 +548,31 @@ def upgrade_manager_bridge(home, source, call, installed, incoming):
     data, agent = paths(home)
     if data.is_symlink() or agent.is_symlink() or not agent.is_file():
         raise RuntimeError("Agent installé absent ou remplacé")
-    for name, expected in installed.items():
+    def matches(name, expected):
         path = data / name
-        if path.is_symlink() or not path.is_file() or sha(path) != expected:
-            raise RuntimeError("Version installée du pont inattendue : arrêt")
+        return not path.is_symlink() and path.is_file() and sha(path) == expected
+    already_updated = bool(additions) and all(matches(name, expected) for name, expected in
+                                             (installed | incoming | additions).items())
+    if not already_updated and not all(matches(name, expected) for name, expected in installed.items()):
+        raise RuntimeError("Version installée du pont inattendue : arrêt")
     old = {}
     new = {}
-    for name, expected in incoming.items():
+    added = {}
+    for name, expected in (incoming | (additions or {})).items():
         path = source / name
         if path.is_symlink() or not path.is_file():
             raise RuntimeError("Nouvelle source du pont absente ou remplacée")
         content = path.read_bytes()
         if expected is not None and hashlib.sha256(content).hexdigest() != expected:
             raise RuntimeError("Empreinte de la nouvelle source du pont inattendue")
-        old[data / name] = (data / name).read_bytes()
-        new[data / name] = content
+        if additions and name in additions:
+            destination = data / name
+            if not already_updated and os.path.lexists(destination):
+                raise RuntimeError("Un nouveau fichier du pont existe déjà : arrêt")
+            added[destination] = content
+        else:
+            old[data / name] = (data / name).read_bytes()
+            new[data / name] = content
     try:
         definition = plistlib.loads(agent.read_bytes())
     except ValueError:
@@ -568,13 +584,20 @@ def upgrade_manager_bridge(home, source, call, installed, incoming):
         raise RuntimeError("Identité de l'agent installé inattendue")
     keychain_token()
     private_keychain_token()
+    if already_updated:
+        return LABEL
     domain = "gui/" + str(os.getuid())
     stopped = call(["/bin/launchctl", "bootout", domain + "/" + LABEL],
                    capture_output=True, text=True, timeout=20, check=False)
     if stopped.returncode:
         raise RuntimeError("Agent actuel non arrêté : aucun fichier modifié")
     stage = "remplacement du pont"
+    created = []
     try:
+        for path, content in added.items():
+            stage = "ajout de " + path.name
+            put_new_or_same(path, content, 0o600)
+            created.append(path)
         for path, content in new.items():
             stage = "remplacement de " + path.name
             replace_owned(path, content, 0o600)
@@ -586,6 +609,9 @@ def upgrade_manager_bridge(home, source, call, installed, incoming):
         detail = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
         for path, content in old.items():
             replace_owned(path, content, 0o600)
+        for path in created:
+            if not path.is_symlink() and path.is_file() and path.read_bytes() == added[path]:
+                path.unlink()
         restored = bootstrap_after_bootout(domain, agent, call)
         if restored.returncode:
             raise RuntimeError("Retour arrière écrit, relance manuelle nécessaire ; échec à l'étape " +
@@ -607,6 +633,13 @@ def upgrade_manager_remote_update_trial(home=None, source=None, call=subprocess.
                                   {"mac_bridge.py": REMOTE_MANAGER_BRIDGE_SHA})
 
 
+def upgrade_manager_install_requests(home=None, source=None, call=subprocess.run):
+    """Install the bridge that hands privately authorized releases to the Manager."""
+    return upgrade_manager_bridge(home, source, call, REMOTE_TRIAL_INSTALLED_SHA,
+                                  {"mac_bridge.py": REMOTE_INSTALL_BRIDGE_SHA},
+                                  additions=REMOTE_INSTALL_FILES)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Installation de la veille Rap Brain P0")
     actions = parser.add_mutually_exclusive_group(required=True)
@@ -619,6 +652,7 @@ def main():
     actions.add_argument("--upgrade-manager-inventory", action="store_true")
     actions.add_argument("--upgrade-manager-process", action="store_true")
     actions.add_argument("--upgrade-manager-remote-update-trial", action="store_true")
+    actions.add_argument("--upgrade-manager-install-requests", action="store_true")
     actions.add_argument("--stop", action="store_true")
     args = parser.parse_args()
     try:
@@ -642,6 +676,8 @@ def main():
             print("Processus Manager activés : " + upgrade_manager_process())
         elif args.upgrade_manager_remote_update_trial:
             print("Essai distant du Manager activé : " + upgrade_manager_remote_update_trial())
+        elif args.upgrade_manager_install_requests:
+            print("Demandes signées du Manager activées : " + upgrade_manager_install_requests())
         else:
             stop()
             print("Veille arrêtée. Fichiers et jeton conservés.")
