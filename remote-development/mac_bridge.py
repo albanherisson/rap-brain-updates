@@ -22,6 +22,10 @@ import urllib.request
 
 from mac_preflight import inspect
 from mac_private_source_trial import keychain_token as private_keychain_token, trial as private_trial, trial_commit
+from mac_reviewed_test_trial import (run_reviewed_test, COMMIT as REVIEWED_COMMIT,
+                                     MANIFEST_SHA256 as REVIEWED_MANIFEST,
+                                     SERVER_SHA256 as REVIEWED_SERVER,
+                                     TEST_SHA256 as REVIEWED_TEST_SHA)
 from pathlib import Path
 
 
@@ -102,7 +106,7 @@ def read_task(task_id, get=request, now=None):
     if schema == "rapbrain-remote-task-v1" and action in ("health_check", "private_source_trial"):
         if set(task) != {"schema", "id", "action", "expected_server_sha256"}:
             raise ValueError("Structure de tâche invalide")
-    elif schema == "rapbrain-remote-task-v2" and action == "source_validate":
+    elif schema == "rapbrain-remote-task-v2" and action in ("source_validate", "reviewed_test_trial"):
         if set(task) != {"schema", "id", "action", "expected_server_sha256", "source_commit",
                          "manifest_sha256", "candidate_server_sha256", "expires_at"}:
             raise ValueError("Structure de tâche invalide")
@@ -114,6 +118,9 @@ def read_task(task_id, get=request, now=None):
         current = time.time() if now is None else now
         if type(expires) is not int or not current < expires <= current + 7 * 86400:
             raise ValueError("Tâche expirée ou trop éloignée")
+        if action == "reviewed_test_trial" and (task["source_commit"], task["manifest_sha256"],
+                task["candidate_server_sha256"]) != (REVIEWED_COMMIT, REVIEWED_MANIFEST, REVIEWED_SERVER):
+            raise ValueError("Version des tests revus inattendue")
     else:
         raise ValueError("Action non autorisée")
     expected = task["expected_server_sha256"]
@@ -123,7 +130,7 @@ def read_task(task_id, get=request, now=None):
 
 
 def run(task, task_sha, probe=inspect, private_probe=private_trial, private_token=private_keychain_token,
-        source_probe=trial_commit):
+        source_probe=trial_commit, reviewed_probe=run_reviewed_test):
     info = probe()
     if info["platform"] != "Darwin":
         raise ValueError("Exécution réservée à macOS")
@@ -159,6 +166,22 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
         result["private_source"] = {key: private_result[key] for key in
                                     ("source_commit", "manifest_sha256", "files_verified",
                                      "python_syntax_verified", "bytes_verified", "temporary_copy_removed")}
+    if task["action"] == "reviewed_test_trial" and result["status"] == "pass":
+        private_result = reviewed_probe(private_token())
+        check = private_result.get("reviewed_test", {})
+        if (private_result.get("schema") != "rapbrain-private-source-trial-v1" or
+                private_result.get("status") != "pass" or
+                private_result.get("source_commit") != REVIEWED_COMMIT or
+                private_result.get("manifest_sha256") != REVIEWED_MANIFEST or
+                private_result.get("temporary_copy_removed") is not True or
+                check.get("status") != "pass" or check.get("tests_run") != 2 or
+                check.get("test_sha256") != REVIEWED_TEST_SHA):
+            raise RuntimeError("Tests revus incomplets : aucun résultat publié")
+        result["private_source"] = {key: private_result[key] for key in
+                                    ("source_commit", "manifest_sha256", "files_verified",
+                                     "python_syntax_verified", "bytes_verified", "temporary_copy_removed")}
+        result["reviewed_test"] = {key: check[key] for key in
+                                   ("status", "tests_run", "test_sha256", "timeout_seconds")}
     return result
 
 
