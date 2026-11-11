@@ -1,10 +1,15 @@
 import base64
+import hashlib
+import io
 import json
 import unittest
+from unittest.mock import patch
 
 from mac_bridge import contents_url, keychain_token, read_queue, read_task, run, publish, watch_once
 from mac_reviewed_test_trial import COMMIT, MANIFEST_SHA256, SERVER_SHA256, TEST_SHA256
 from mac_manager_lab_trial import RUNNER_SHA256
+from mac_bridge import (REMOTE_MANAGER_PROOF, REMOTE_MANAGER_RUNNER, REMOTE_MANAGER_SERVER_SHA,
+                        REMOTE_MANAGER_TASK, run_manager_remote_update_trial)
 
 
 TASK = {"schema": "rapbrain-remote-task-v1", "id": "pilot-001", "action": "health_check",
@@ -18,6 +23,68 @@ def item(task):
 
 
 class BridgeTest(unittest.TestCase):
+    def test_remote_manager_trial_is_bound_to_one_expiring_copy_task(self):
+        candidate = {**TASK, "id": REMOTE_MANAGER_TASK, "action": "manager_remote_update_trial",
+                     "expected_server_sha256": REMOTE_MANAGER_SERVER_SHA, "expires_at": 2000003600}
+        def probe():
+            return {"platform": "Darwin", "server_sha256": REMOTE_MANAGER_SERVER_SHA,
+                    "app_present": True, "manager_present": True, "git_available": True,
+                    "ollama_available": True}
+        results = []
+        calls = []
+        def fake(url, method="GET", token=None, payload=None):
+            if method == "PUT":
+                results.append(json.loads(base64.b64decode(json.loads(payload)["content"])))
+                return {"content": {"path": "result"}}
+            if "queue/current.json" in url:
+                return item({"schema": "rapbrain-remote-queue-v1", "task_id": REMOTE_MANAGER_TASK})
+            if "/tasks/" in url:
+                return item(candidate)
+            return {"type": "file"} if results else None
+        def trial():
+            calls.append(True)
+            return REMOTE_MANAGER_PROOF.copy()
+        with patch("mac_bridge.time.time", return_value=2000000000):
+            self.assertEqual(watch_once("token", get=fake, probe=probe, remote_update_trial=trial),
+                             (REMOTE_MANAGER_TASK, "pass"))
+            self.assertEqual(watch_once("token", get=fake, probe=probe, remote_update_trial=trial),
+                             (REMOTE_MANAGER_TASK, "already_published"))
+        self.assertEqual(calls, [True])
+        self.assertEqual(results[0]["manager_remote_update"]["scope"], "temporary_copies")
+        self.assertEqual(results[0]["manager_remote_update"]["copy_rollback"], "rolled_back")
+        with self.assertRaisesRegex(ValueError, "expirée"):
+            read_task(REMOTE_MANAGER_TASK, get=lambda _: item(candidate), now=2000003600)
+        for changed in ({"command": "python"}, {"id": "other"}, {"expected_server_sha256": "b" * 64}):
+            task = {**candidate, **changed}
+            with self.assertRaisesRegex(ValueError, "Pilote distant"):
+                read_task(task["id"], get=lambda _: item(task), now=2000000000)
+
+    def test_remote_manager_runner_checks_immutable_bytes_and_redacts_output(self):
+        raw = b"reviewed runner"
+        class Response(io.BytesIO):
+            def geturl(self):
+                return REMOTE_MANAGER_RUNNER
+        def open_runner(url, timeout):
+            self.assertEqual(url, REMOTE_MANAGER_RUNNER)
+            return Response(raw)
+        with patch("mac_bridge.subprocess.Popen") as spawn:
+            self.assertEqual(run_manager_remote_update_trial(open_runner, spawn),
+                             {"status": "failed", "reason": "runner_hash_mismatch"})
+            spawn.assert_not_called()
+            process = spawn.return_value.__enter__.return_value
+            process.returncode = 0
+            process.communicate.return_value = (b"PRIVATE TRACE\n" +
+                                                json.dumps(REMOTE_MANAGER_PROOF).encode(), None)
+            with patch("mac_bridge.REMOTE_MANAGER_RUNNER_SHA", hashlib.sha256(raw).hexdigest()):
+                result = run_manager_remote_update_trial(open_runner, spawn)
+                self.assertEqual(result, REMOTE_MANAGER_PROOF)
+                self.assertNotIn("PRIVATE", str(result))
+                process.returncode = 1
+                process.communicate.return_value = (
+                    b'{"status":"failed","reason":"/private/secret"}', None)
+                self.assertEqual(run_manager_remote_update_trial(open_runner, spawn),
+                                 {"status": "failed", "reason": "runner_proof_invalid"})
+
     def test_only_allowlisted_task(self):
         task, sha = read_task("pilot-001", get=lambda url: item(TASK))
         result = run(task, sha, probe=lambda: {"platform": "Darwin", "server_sha256": "a" * 64,

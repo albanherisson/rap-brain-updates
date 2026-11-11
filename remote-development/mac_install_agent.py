@@ -42,6 +42,10 @@ MANAGER_LAB_INSTALLED_SHA = {**REVIEWED_INSTALLED_SHA,
 MANAGER_INVENTORY_INSTALLED_SHA = {**MANAGER_LAB_INSTALLED_SHA,
                                    "mac_bridge.py": "a203bffba2adc093bce991016dc4ea73faa68255b60b924b055c31b099aea3f1",
                                    MANAGER_INVENTORY_FILE: "03493fec5385584a6f3e52c5075abe2d494df0e850c8f1d9db76d9c259cc699c"}
+MANAGER_PROCESS_INSTALLED_SHA = {**MANAGER_INVENTORY_INSTALLED_SHA,
+                                 "mac_bridge.py": "af2b737a6f5b2050be6604b19663b56169b81b4eaf8bf11e5345969bb1f7a6df",
+                                 MANAGER_INVENTORY_FILE: "a28ab8cd06b7222377e0a08bc22b85d63ea49f71b4a397330db65d5bf3d5b47e"}
+REMOTE_MANAGER_BRIDGE_SHA = "6fadaf071ff4a926b0d4cd5eadae95aaf88dc0e74ab28acca43f0ac99f18b760"
 LEGACY_SHA = {"mac_bridge.py": "803dbc3cd5296d64192b6e6c2cd83307eaf82288da2cea943461ce5089c2014a",
               "mac_preflight.py": "974ffefde845f8f763e57bd98db0e07142f1b9f699667e4a8e373b5c139cccf4"}
 
@@ -529,8 +533,8 @@ def bootstrap_after_bootout(domain, agent, call):
     return result
 
 
-def upgrade_manager_process(home=None, source=None, call=subprocess.run):
-    """Add a coarse read-only process census to the known inventory agent."""
+def upgrade_manager_bridge(home, source, call, installed, incoming):
+    """Replace the named files of a known agent and restore them if restart fails."""
     if platform.system() != "Darwin":
         raise RuntimeError("Mise à niveau réservée à macOS")
     home = Path.home() if home is None else Path(home)
@@ -538,16 +542,21 @@ def upgrade_manager_process(home=None, source=None, call=subprocess.run):
     data, agent = paths(home)
     if data.is_symlink() or agent.is_symlink() or not agent.is_file():
         raise RuntimeError("Agent installé absent ou remplacé")
-    for name, expected in MANAGER_INVENTORY_INSTALLED_SHA.items():
+    for name, expected in installed.items():
         path = data / name
         if path.is_symlink() or not path.is_file() or sha(path) != expected:
             raise RuntimeError("Version installée du pont inattendue : arrêt")
     old = {}
-    for name in ("mac_bridge.py", MANAGER_INVENTORY_FILE):
-        incoming = source / name
-        if incoming.is_symlink() or not incoming.is_file():
+    new = {}
+    for name, expected in incoming.items():
+        path = source / name
+        if path.is_symlink() or not path.is_file():
             raise RuntimeError("Nouvelle source du pont absente ou remplacée")
+        content = path.read_bytes()
+        if expected is not None and hashlib.sha256(content).hexdigest() != expected:
+            raise RuntimeError("Empreinte de la nouvelle source du pont inattendue")
         old[data / name] = (data / name).read_bytes()
+        new[data / name] = content
     try:
         definition = plistlib.loads(agent.read_bytes())
     except ValueError:
@@ -566,9 +575,9 @@ def upgrade_manager_process(home=None, source=None, call=subprocess.run):
         raise RuntimeError("Agent actuel non arrêté : aucun fichier modifié")
     stage = "remplacement du pont"
     try:
-        for path in old:
+        for path, content in new.items():
             stage = "remplacement de " + path.name
-            replace_owned(path, (source / path.name).read_bytes(), 0o600)
+            replace_owned(path, content, 0o600)
         stage = "redémarrage launchd"
         started = bootstrap_after_bootout(domain, agent, call)
         if started.returncode:
@@ -586,6 +595,18 @@ def upgrade_manager_process(home=None, source=None, call=subprocess.run):
     return LABEL
 
 
+def upgrade_manager_process(home=None, source=None, call=subprocess.run):
+    """Add a coarse read-only process census to the known inventory agent."""
+    return upgrade_manager_bridge(home, source, call, MANAGER_INVENTORY_INSTALLED_SHA,
+                                  {"mac_bridge.py": None, MANAGER_INVENTORY_FILE: None})
+
+
+def upgrade_manager_remote_update_trial(home=None, source=None, call=subprocess.run):
+    """Allow the one reviewed remote update trial on disposable copies."""
+    return upgrade_manager_bridge(home, source, call, MANAGER_PROCESS_INSTALLED_SHA,
+                                  {"mac_bridge.py": REMOTE_MANAGER_BRIDGE_SHA})
+
+
 def main():
     parser = argparse.ArgumentParser(description="Installation de la veille Rap Brain P0")
     actions = parser.add_mutually_exclusive_group(required=True)
@@ -597,6 +618,7 @@ def main():
     actions.add_argument("--upgrade-manager-lab", action="store_true")
     actions.add_argument("--upgrade-manager-inventory", action="store_true")
     actions.add_argument("--upgrade-manager-process", action="store_true")
+    actions.add_argument("--upgrade-manager-remote-update-trial", action="store_true")
     actions.add_argument("--stop", action="store_true")
     args = parser.parse_args()
     try:
@@ -618,6 +640,8 @@ def main():
             print("Inventaire Manager activé : " + upgrade_manager_inventory())
         elif args.upgrade_manager_process:
             print("Processus Manager activés : " + upgrade_manager_process())
+        elif args.upgrade_manager_remote_update_trial:
+            print("Essai distant du Manager activé : " + upgrade_manager_remote_update_trial())
         else:
             stop()
             print("Veille arrêtée. Fichiers et jeton conservés.")

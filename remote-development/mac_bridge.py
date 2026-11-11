@@ -13,8 +13,10 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -38,6 +40,20 @@ TASK_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,49}\Z")
 MAX_BYTES = 4096
 KEYCHAIN_SERVICE = "com.gns.rapbrain.remote.p0"
 KEYCHAIN_ACCOUNT = "albanherisson"
+REMOTE_MANAGER_TASK = "pilot-014"
+REMOTE_MANAGER_SERVER_SHA = "4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e16c"
+REMOTE_MANAGER_RUNNER_SHA = "495ce0989ed8fd98cb317ef37ac6923ffee5fc1aefad9ff06245c0ac2a5fac9c"
+REMOTE_MANAGER_RUNNER = (
+    "https://raw.githubusercontent.com/albanherisson/rap-brain-updates/"
+    "964665a91aeaca13719782d6a52b8ac8ba7c937d/remote-development/mac_manager_remote_update_trial.py"
+)
+REMOTE_MANAGER_PROOF = {
+    "status": "pass", "manager_request": "programmatic_verified", "scope": "temporary_copies",
+    "external_handoff": "verified", "copy_install": "committed", "copy_rollback": "rolled_back",
+    "real_server_health": "verified", "health_refusal": "injected_after_real_probe",
+    "macos_codesign": "verified", "synthetic_sqlite_and_config": "preserved",
+    "active_sources_unchanged": True, "production_key_used": False,
+}
 
 
 def request(url, method="GET", token=None, payload=None):
@@ -108,6 +124,15 @@ def read_task(task_id, get=request, now=None):
     if schema == "rapbrain-remote-task-v1" and action in ("health_check", "private_source_trial", "manager_inventory", "manager_process"):
         if set(task) != {"schema", "id", "action", "expected_server_sha256"}:
             raise ValueError("Structure de tâche invalide")
+    elif schema == "rapbrain-remote-task-v1" and action == "manager_remote_update_trial":
+        if (task_id != REMOTE_MANAGER_TASK
+                or set(task) != {"schema", "id", "action", "expected_server_sha256", "expires_at"}
+                or task["expected_server_sha256"] != REMOTE_MANAGER_SERVER_SHA):
+            raise ValueError("Pilote distant du Manager invalide")
+        expires = task["expires_at"]
+        current = time.time() if now is None else now
+        if type(expires) is not int or not current < expires <= current + 7 * 86400:
+            raise ValueError("Tâche expirée ou trop éloignée")
     elif schema == "rapbrain-remote-task-v2" and action in ("source_validate", "reviewed_test_trial", "manager_lab_trial"):
         if set(task) != {"schema", "id", "action", "expected_server_sha256", "source_commit",
                          "manifest_sha256", "candidate_server_sha256", "expires_at"}:
@@ -131,9 +156,55 @@ def read_task(task_id, get=request, now=None):
     return task, hashlib.sha256(raw).hexdigest()
 
 
+def run_manager_remote_update_trial(opener=urllib.request.urlopen, spawn=subprocess.Popen):
+    with tempfile.TemporaryDirectory(prefix="rapbrain-remote-manager-runner-") as temporary:
+        root = Path(temporary).resolve()
+        try:
+            with opener(REMOTE_MANAGER_RUNNER, timeout=20) as response:
+                raw = response.read(50_001)
+                if (response.geturl() != REMOTE_MANAGER_RUNNER or len(raw) > 50_000
+                        or hashlib.sha256(raw).hexdigest() != REMOTE_MANAGER_RUNNER_SHA):
+                    return {"status": "failed", "reason": "runner_hash_mismatch"}
+        except OSError:
+            return {"status": "failed", "reason": "runner_download_failed"}
+        runner = root / "trial.py"
+        runner.write_bytes(raw)
+        environment = {"HOME": str(Path.home().resolve()), "TMPDIR": str(root),
+                       "PATH": "/usr/bin:/bin:/usr/sbin:/sbin", "LC_ALL": "C", "LANG": "C"}
+        try:
+            with spawn([sys.executable, "-I", "-B", str(runner)], cwd=root, env=environment,
+                       stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT) as process:
+                try:
+                    output, _ = process.communicate(timeout=300)
+                except subprocess.TimeoutExpired:
+                    process.send_signal(signal.SIGINT)
+                    try:
+                        process.communicate(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.communicate()
+                    return {"status": "failed", "reason": "runner_timeout"}
+                exit_code = process.returncode
+        except OSError:
+            return {"status": "failed", "reason": "runner_execution_failed"}
+    try:
+        proof = json.loads(output.splitlines()[-1]) if len(output) <= 16_384 else None
+    except (IndexError, ValueError, UnicodeError):
+        proof = None
+    if exit_code == 0 and proof == REMOTE_MANAGER_PROOF:
+        return REMOTE_MANAGER_PROOF.copy()
+    if (exit_code != 0 and isinstance(proof, dict) and proof.keys() == {"status", "reason"}
+            and proof["status"] == "failed" and isinstance(proof["reason"], str)
+            and re.fullmatch(r"[a-zA-Z0-9_]{1,80}", proof["reason"])):
+        return {"status": "failed", "reason": proof["reason"]}
+    return {"status": "failed", "reason": "runner_proof_invalid"}
+
+
 def run(task, task_sha, probe=inspect, private_probe=private_trial, private_token=private_keychain_token,
         source_probe=trial_commit, reviewed_probe=run_reviewed_test, manager_probe=run_manager_lab,
-        manager_inventory=inspect_manager, manager_process=manager_running):
+        manager_inventory=inspect_manager, manager_process=manager_running,
+        remote_update_trial=run_manager_remote_update_trial):
     info = probe()
     if info["platform"] != "Darwin":
         raise ValueError("Exécution réservée à macOS")
@@ -216,6 +287,10 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
                 any(type(process.get(key)) is not bool for key in fields)):
             raise RuntimeError("Inventaire des processus invalide")
         result["manager_process"] = {key: process[key] for key in fields}
+    if task["action"] == "manager_remote_update_trial" and result["status"] == "pass":
+        proof = remote_update_trial()
+        result["status"] = proof["status"]
+        result["manager_remote_update"] = {**proof, "runner_sha256": REMOTE_MANAGER_RUNNER_SHA}
     return result
 
 
@@ -229,12 +304,12 @@ def publish(task_id, result, token, get=request):
     return get(url.split("?", 1)[0], method="PUT", token=token, payload=payload)
 
 
-def watch_once(token, get=request, probe=inspect):
+def watch_once(token, get=request, probe=inspect, remote_update_trial=run_manager_remote_update_trial):
     task_id = read_queue(get)
     if get(contents_url("results", task_id), token=token) is not None:
         return task_id, "already_published"
     task, task_sha = read_task(task_id, get=get)
-    result = run(task, task_sha, probe=probe)
+    result = run(task, task_sha, probe=probe, remote_update_trial=remote_update_trial)
     publish(task_id, result, token, get=get)
     return task_id, result["status"]
 
