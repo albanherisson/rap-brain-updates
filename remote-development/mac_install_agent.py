@@ -37,6 +37,9 @@ MANAGER_INVENTORY_FILE = "mac_manager_inventory.py"
 MANAGER_LAB_INSTALLED_SHA = {**REVIEWED_INSTALLED_SHA,
                              "mac_bridge.py": "620c42b7c7a67406533f812b81b956ab2f9ce38982e2cb21c6071b6cfe144c4c",
                              MANAGER_LAB_FILE: "6f82e1074636c39421791f1ca61bfd844a82af1db7e44753b402f227a6e42c79"}
+MANAGER_INVENTORY_INSTALLED_SHA = {**MANAGER_LAB_INSTALLED_SHA,
+                                   "mac_bridge.py": "a203bffba2adc093bce991016dc4ea73faa68255b60b924b055c31b099aea3f1",
+                                   MANAGER_INVENTORY_FILE: "03493fec5385584a6f3e52c5075abe2d494df0e850c8f1d9db76d9c259cc699c"}
 LEGACY_SHA = {"mac_bridge.py": "803dbc3cd5296d64192b6e6c2cd83307eaf82288da2cea943461ce5089c2014a",
               "mac_preflight.py": "974ffefde845f8f763e57bd98db0e07142f1b9f699667e4a8e373b5c139cccf4"}
 
@@ -512,6 +515,65 @@ def upgrade_manager_inventory(home=None, source=None, call=subprocess.run):
     return LABEL
 
 
+def upgrade_manager_process(home=None, source=None, call=subprocess.run):
+    """Add a coarse read-only process census to the known inventory agent."""
+    if platform.system() != "Darwin":
+        raise RuntimeError("Mise à niveau réservée à macOS")
+    home = Path.home() if home is None else Path(home)
+    source = Path(__file__).resolve().parent if source is None else Path(source)
+    data, agent = paths(home)
+    if data.is_symlink() or agent.is_symlink() or not agent.is_file():
+        raise RuntimeError("Agent installé absent ou remplacé")
+    for name, expected in MANAGER_INVENTORY_INSTALLED_SHA.items():
+        path = data / name
+        if path.is_symlink() or not path.is_file() or sha(path) != expected:
+            raise RuntimeError("Version installée du pont inattendue : arrêt")
+    old = {}
+    for name in ("mac_bridge.py", MANAGER_INVENTORY_FILE):
+        incoming = source / name
+        if incoming.is_symlink() or not incoming.is_file():
+            raise RuntimeError("Nouvelle source du pont absente ou remplacée")
+        old[data / name] = (data / name).read_bytes()
+    try:
+        definition = plistlib.loads(agent.read_bytes())
+    except ValueError:
+        raise RuntimeError("Plist installé illisible") from None
+    arguments = definition.get("ProgramArguments") if isinstance(definition, dict) else None
+    if (not isinstance(arguments, list) or len(arguments) != 3 or
+            not isinstance(arguments[0], str) or
+            definition != plist(data, arguments[0], ollama_executable(home))):
+        raise RuntimeError("Identité de l'agent installé inattendue")
+    keychain_token()
+    private_keychain_token()
+    domain = "gui/" + str(os.getuid())
+    stopped = call(["/bin/launchctl", "bootout", domain + "/" + LABEL],
+                   capture_output=True, text=True, timeout=20, check=False)
+    if stopped.returncode:
+        raise RuntimeError("Agent actuel non arrêté : aucun fichier modifié")
+    stage = "remplacement du pont"
+    try:
+        for path in old:
+            stage = "remplacement de " + path.name
+            replace_owned(path, (source / path.name).read_bytes(), 0o600)
+        stage = "redémarrage launchd"
+        started = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
+                       capture_output=True, text=True, timeout=20, check=False)
+        if started.returncode:
+            raise RuntimeError("code " + str(started.returncode))
+    except (RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
+        detail = str(exc) if isinstance(exc, RuntimeError) else type(exc).__name__
+        for path, content in old.items():
+            replace_owned(path, content, 0o600)
+        restored = call(["/bin/launchctl", "bootstrap", domain, str(agent)],
+                        capture_output=True, text=True, timeout=20, check=False)
+        if restored.returncode:
+            raise RuntimeError("Retour arrière écrit, relance manuelle nécessaire ; échec à l'étape " +
+                               stage + " (" + detail + ")") from None
+        raise RuntimeError("Mise à niveau refusée à l'étape " + stage + " (" + detail +
+                           ") ; ancien agent restauré") from None
+    return LABEL
+
+
 def main():
     parser = argparse.ArgumentParser(description="Installation de la veille Rap Brain P0")
     actions = parser.add_mutually_exclusive_group(required=True)
@@ -522,6 +584,7 @@ def main():
     actions.add_argument("--upgrade-reviewed-test", action="store_true")
     actions.add_argument("--upgrade-manager-lab", action="store_true")
     actions.add_argument("--upgrade-manager-inventory", action="store_true")
+    actions.add_argument("--upgrade-manager-process", action="store_true")
     actions.add_argument("--stop", action="store_true")
     args = parser.parse_args()
     try:
@@ -541,6 +604,8 @@ def main():
             print("Laboratoire Manager activé : " + upgrade_manager_lab())
         elif args.upgrade_manager_inventory:
             print("Inventaire Manager activé : " + upgrade_manager_inventory())
+        elif args.upgrade_manager_process:
+            print("Processus Manager activés : " + upgrade_manager_process())
         else:
             stop()
             print("Veille arrêtée. Fichiers et jeton conservés.")
