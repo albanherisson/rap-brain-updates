@@ -9,7 +9,7 @@ import time
 import unittest
 
 from mac_manager_install_request import (
-    APP, DASHBOARD_LOG, HANDOFF_RECEIPT, LAUNCHER, advance_install_task,
+    APP, HANDOFF_RECEIPT, LAUNCHER, advance_install_task,
     dashboard_ready, parse_install_task, reopen_manager,
 )
 from manager_remote_request import queue_remote_request, remote_directory, save_remote_receipt, write_remote_json
@@ -88,22 +88,28 @@ class ReopeningTest(unittest.TestCase):
                 listener.start()
                 try:
                     port = server.server_port
-                    log = home / DASHBOARD_LOG
-                    log.parent.mkdir(parents=True)
-                    log.write_text(f"Tableau de bord : http://127.0.0.1:{port}/\n")
+                    runtime = home / "rapbrain-manager-beta-test"
+                    runtime.mkdir(mode=0o700)
+                    (runtime / "port.json").write_text(json.dumps({"port": port, "pid": 222}))
                     def process(args, **_):
                         uid = os.getuid()
-                        if args[0] == "/usr/sbin/lsof":
+                        if args[0] == "/usr/bin/getconf":
+                            out = str(home) + "\n"
+                        elif "-iTCP:" + str(port) in args:
                             out = "p222\nf3\n"
-                        elif args[1:3] == ["-p", "222"]:
+                        elif args[0] == "/bin/ps":
                             out = f"111 {uid}\n"
+                        elif "222" in args:
+                            out = f"p222\nn{runtime}\n"
                         else:
-                            out = f"{uid} /usr/bin/python3 {launcher} --candidate {launcher.parent / 'candidate'} --no-browser\n"
+                            out = f"p111\nfcwd\nn{launcher.parent}\n"
                         return subprocess.CompletedProcess(args, 0, out, "")
                     self.assertTrue(dashboard_ready(home, attempt, "committed", call=process))
                     self.assertFalse(dashboard_ready(home, "f" * 32, "committed", call=process))
                     before = len(calls)
                     def unowned(args, **_):
+                        if args[0] == "/usr/bin/getconf":
+                            return process(args)
                         return subprocess.CompletedProcess(args, 0, "p222\np333\n", "")
                     self.assertFalse(dashboard_ready(home, attempt, "committed", call=unowned))
                     self.assertEqual(len(calls), before)

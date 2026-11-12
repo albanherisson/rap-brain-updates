@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -16,7 +17,7 @@ INSTALLER_URL = ("https://raw.githubusercontent.com/albanherisson/rap-brain-upda
                  "fac9dd48ebae97faf0e347573d30a7f73d691cd8/remote-development/mac_install_agent.py")
 INSTALLER_SHA = "e4af248672cba48907401747383bf857112554591235165cf93616ff46d294e8"
 ADAPTER = "mac_manager_install_request.py"
-NEW_SHA = "4ba0a419fe0e3a35b04949a539d135535499730ad90fc9b5b6209e2f063605ee"
+NEW_SHA = "9ce990a7871aae724d3573101feff4ccde050862effb74922625f85e6cdc2c2c"
 BRIDGE = Path("Library/Application Support/RapBrainRemoteBridge")
 BASELINE = {
     ADAPTER: "519dae5e5bfe2de40b700f668d0a55344da60ec72cd6dfda6586addcfbb1767c",
@@ -76,10 +77,31 @@ def wait_for_agent(label):
     return False
 
 
+def native_log_state(home):
+    log = home / "Library/Logs/RapBrainManager-Beta13.log"
+    if log.parent.resolve() != log.parent:
+        return "unavailable"
+    try:
+        fd = os.open(log, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                return "unavailable"
+            stream.seek(max(0, info.st_size - 32_768))
+            data = stream.read(32_768)
+    except OSError:
+        return "unavailable"
+    markers = re.findall(rb"^(?:Tableau de bord :|RC40 REFUSED:|Mise . jour du Manager en cours)",
+                         data, re.MULTILINE)
+    return {b"Tableau de bord :": "dashboard_announced", b"RC40 REFUSED:": "startup_refused"}.get(
+        markers[-1] if markers else b"", "no_dashboard_announcement")
+
+
 def activate(home, directory, adapter):
     before = stage(home, directory, adapter)
     from mac_install_agent import LABEL, upgrade_manager_bridge
-    from mac_manager_install_request import APP, HANDOFF_RECEIPT, LAUNCHER, compatible_launcher, reopen_manager
+    from mac_manager_install_request import (APP, HANDOFF_RECEIPT, LAUNCHER, compatible_launcher,
+        dashboard_ready, reopen_manager)
     from manager_remote_request import REMOTE_TERMINAL, lock_remote_directory, read_remote_json, remote_directory, remote_receipt
 
     require(compatible_launcher(home / APP / LAUNCHER), "manager_reopen_launcher_changed")
@@ -97,7 +119,14 @@ def activate(home, directory, adapter):
             "manager_reopen_accepted_sequence_missing")
 
     print("Vérification du tableau de bord installé sur ce Mac.", flush=True)
-    require(reopen_manager(home, receipt["attempt"], receipt["state"]), "manager_reopen_dashboard_unverified")
+    observed = {"dashboard_port_declared": False, "dashboard_process_verified": False,
+                "dashboard_http_responded": False}
+    def probe(home, attempt, state):
+        return dashboard_ready(home, attempt, state, diagnostics=observed)
+
+    if not reopen_manager(home, receipt["attempt"], receipt["state"], probe=probe):
+        return {"status": "failed", "reason": "manager_reopen_dashboard_unverified",
+                "native_log": native_log_state(home), **observed}
 
     mailbox = remote_directory(home, create=True)
     fd = lock_remote_directory(mailbox)
@@ -123,6 +152,8 @@ def main():
     with tempfile.TemporaryDirectory(prefix="rapbrain-reopen-ready-") as name:
         result = activate(Path.home().resolve(), Path(name).resolve(), adapter)
     print(json.dumps(result, sort_keys=True), flush=True)
+    if result["status"] != "pass":
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

@@ -25,8 +25,6 @@ LAUNCHER = Path("Contents/Resources/launch_manager.py")
 LAUNCHER_SHA = "ceda87b7655d643ca6e9dc66afa0f5d3e0d20857abd2e8c202b8a1978b86a660"
 CORRECTED_LAUNCHER_SHA = "642dc6d2595cca8f5ad6a189dc7362cca74080344beb9e9c331880b157869c7e"
 HANDOFF_RECEIPT = Path("Downloads/RapBrainManagerBackups/secure-update/manager-handoff-result.json")
-DASHBOARD_LOG = Path("Library/Logs/RapBrainManager-Beta13.log")
-DASHBOARD_LINE = re.compile(rb"^Tableau de bord : http://127\.0\.0\.1:([0-9]{1,5})/\r?$", re.MULTILINE)
 REOPEN_ATTEMPTS = 2
 REOPEN_TIMEOUT = 12
 REOPEN_POLL = 0.75
@@ -55,33 +53,69 @@ def authorize_install_task(task, request, *, token=keychain_token, fetch=github_
         raise ValueError("remote_manager_private_authorization_mismatch")
 
 
-def open_manager(app, call=subprocess.run):
+def open_manager(app, call=subprocess.run, *, background=True):
     if app.resolve() != app or not app.is_dir():
         return False
     signature = call(["/usr/bin/codesign", "--verify", "--deep", "--strict", str(app)],
                      capture_output=True, stdin=subprocess.DEVNULL, timeout=30)
     if signature.returncode != 0:
         return False
-    return call(["/usr/bin/open", "-g", str(app)], capture_output=True,
+    args = ["/usr/bin/open", "-g", str(app)] if background else ["/usr/bin/open", str(app)]
+    return call(args, capture_output=True,
                 stdin=subprocess.DEVNULL, timeout=15).returncode == 0
 
 
-def dashboard_ports(home):
-    path = home / DASHBOARD_LOG
-    if path.parent.resolve() != path.parent:
-        return ()
+def runtime_directories(call):
+    roots = {Path(tempfile.gettempdir()).resolve(), Path("/tmp").resolve()}
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        with os.fdopen(fd, "rb") as log:
-            info = os.fstat(log.fileno())
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-                return ()
-            log.seek(max(0, info.st_size - 65_536))
-            raw = log.read(65_536)
-    except OSError:
-        return ()
-    ports = (int(match) for match in reversed(DASHBOARD_LINE.findall(raw)))
-    return tuple(dict.fromkeys(port for port in ports if 1024 <= port <= 65535 and port not in (8765, 11434)))[:2]
+        result = call(["/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"], capture_output=True,
+                      text=True, stdin=subprocess.DEVNULL, timeout=2)
+        if result.returncode == 0 and not result.stderr and len(result.stdout) <= 1024:
+            root = Path(result.stdout.strip())
+            if root.is_absolute():
+                roots.add(root.resolve())
+    except (OSError, subprocess.SubprocessError):
+        pass
+    found = {}
+    for root in roots:
+        try:
+            for path in root.glob("rapbrain-manager-beta-*"):
+                info = path.lstat()
+                if (stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid()
+                        and not info.st_mode & 0o077):
+                    found[path] = info.st_mtime_ns
+        except OSError:
+            continue
+    return sorted(found, key=found.get, reverse=True)[:8]
+
+
+def dashboard_record(runtime):
+    try:
+        fd = os.open(runtime / "port.json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as stream:
+            info = os.fstat(stream.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or not 0 < info.st_size <= 256:
+                return None
+            record = decode_remote_json(stream.read(257))
+    except (OSError, ValueError):
+        return None
+    if (type(record) is dict and set(record) == {"port", "pid"}
+            and type(record["port"]) is int and 1024 <= record["port"] <= 65535
+            and record["port"] not in (8765, 11434)
+            and type(record["pid"]) is int and record["pid"] > 1):
+        return record
+    return None
+
+
+def process_cwd(pid, call):
+    result = call(["/usr/sbin/lsof", "-nP", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+                  capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=2)
+    lines = result.stdout.splitlines()
+    if (result.returncode == 0 and not result.stderr and len(result.stdout) <= 4096
+            and len(lines) in (2, 3) and lines[0] == f"p{pid}"
+            and (len(lines) == 2 or lines[1] == "fcwd") and lines[-1].startswith("n/")):
+        return Path(lines[-1][1:]).resolve()
+    return None
 
 
 def listener_pid(port, call):
@@ -97,33 +131,33 @@ def listener_pid(port, call):
     return None
 
 
-def owned_dashboard(port, launcher, call):
-    pid = listener_pid(port, call)
-    if pid is None:
-        return None
-    child = call(["/bin/ps", "-p", str(pid), "-o", "ppid=,uid="],
+def owned_dashboard(port, pid, runtime, resources, call):
+    if listener_pid(port, call) != pid or process_cwd(pid, call) != runtime:
+        return False
+    child = call(["/bin/ps", "-p", str(pid), "-o", "ppid=", "-o", "uid="],
                  capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=2)
     fields = child.stdout.split()
     if (child.returncode or child.stderr or len(fields) != 2 or not fields[0].isdigit()
             or int(fields[0]) < 2 or fields[1] != str(os.getuid())):
-        return None
-    parent = call(["/bin/ps", "-ww", "-p", fields[0], "-o", "uid=,command="],
-                  capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=2)
-    identity = parent.stdout.split(None, 1)
-    expected = f" {launcher} --candidate {launcher.parent / 'candidate'} --no-browser"
-    if (not parent.returncode and not parent.stderr and len(identity) == 2
-            and identity[0] == str(os.getuid()) and identity[1].strip().endswith(expected)):
-        return pid
-    return None
+        return False
+    return process_cwd(int(fields[0]), call) == resources
 
 
-def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.client.HTTPConnection):
-    launcher = home / APP / LAUNCHER
-    for port in dashboard_ports(home):
+def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.client.HTTPConnection,
+                    diagnostics=None):
+    resources = (home / APP / LAUNCHER).parent
+    for runtime in runtime_directories(call):
+        record = dashboard_record(runtime)
+        if record is None:
+            continue
+        if diagnostics is not None:
+            diagnostics["dashboard_port_declared"] = True
+        port, pid = record["port"], record["pid"]
         try:
-            pid = owned_dashboard(port, launcher, call)
-            if pid is None:
+            if not owned_dashboard(port, pid, runtime, resources, call):
                 continue
+            if diagnostics is not None:
+                diagnostics["dashboard_process_verified"] = True
             connection = connect("127.0.0.1", port, timeout=2)
             try:
                 connection.request("GET", "/api/rapbrain/manager-update-state")
@@ -132,10 +166,12 @@ def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.c
                         or response.getheader("Content-Type", "").split(";")[0] != "application/json"):
                     continue
                 receipt = decode_remote_json(response.read(4097))
+                if diagnostics is not None:
+                    diagnostics["dashboard_http_responded"] = True
             finally:
                 connection.close()
             if (type(receipt) is dict and receipt.get("attempt") == attempt and receipt.get("state") == state
-                    and owned_dashboard(port, launcher, call) == pid):
+                    and owned_dashboard(port, pid, runtime, resources, call)):
                 return True
         except (OSError, ValueError, http.client.HTTPException, subprocess.SubprocessError):
             continue
@@ -146,9 +182,13 @@ def reopen_manager(home, attempt, state, *, opener=open_manager, probe=dashboard
                    clock=time.monotonic, sleep=time.sleep):
     if probe(home, attempt, state):
         return True
-    for _ in range(REOPEN_ATTEMPTS):
+    for attempt_number in range(REOPEN_ATTEMPTS):
         try:
-            if not opener(home / APP):
+            if opener is open_manager:
+                opened = open_manager(home / APP, background=attempt_number == 0)
+            else:
+                opened = opener(home / APP)
+            if not opened:
                 continue
         except (OSError, subprocess.SubprocessError):
             continue
