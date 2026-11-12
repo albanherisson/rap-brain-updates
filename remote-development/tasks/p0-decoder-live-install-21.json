@@ -1,0 +1,1 @@
+{"action":"manager_install","authorization_commit":"5f79b6bb1a52a83fdca913df71cdc5cdabc12bef","expected_server_sha256":"4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e16c","expires_at":1794533180,"id":"p0-decoder-live-install-21","manifest_sha256":"c1d229f2b1114daa55b6fb46fc47e77eaf87ada3c51c71075f7f6478099f9817","schema":"rapbrain-remote-task-v3","sequence":21}
