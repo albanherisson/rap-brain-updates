@@ -218,6 +218,7 @@ class ManagerTransactionTests(unittest.TestCase):
     def test_failed_health_restores_exact_code(self):
         result = self.tx([False, True]).install(self.signed, self.archive)
         self.assertEqual(result['state'], 'rolled_back')
+        self.assertEqual(result['reason'], 'manager_health_failed')
         self.assert_code(self.before)
         self.assert_data()
 
