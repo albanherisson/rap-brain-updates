@@ -17,7 +17,7 @@ INSTALLER_URL = ("https://raw.githubusercontent.com/albanherisson/rap-brain-upda
                  "fac9dd48ebae97faf0e347573d30a7f73d691cd8/remote-development/mac_install_agent.py")
 INSTALLER_SHA = "e4af248672cba48907401747383bf857112554591235165cf93616ff46d294e8"
 ADAPTER = "mac_manager_install_request.py"
-NEW_SHA = "9ce990a7871aae724d3573101feff4ccde050862effb74922625f85e6cdc2c2c"
+NEW_SHA = "9a3414c93c6961c3091fb3cf8ffd66eec736fd04de41e9d0af57848b7129c87e"
 BRIDGE = Path("Library/Application Support/RapBrainRemoteBridge")
 BASELINE = {
     ADAPTER: "519dae5e5bfe2de40b700f668d0a55344da60ec72cd6dfda6586addcfbb1767c",
@@ -119,7 +119,7 @@ def activate(home, directory, adapter):
             "manager_reopen_accepted_sequence_missing")
 
     print("Vérification du tableau de bord installé sur ce Mac.", flush=True)
-    observed = {"dashboard_port_declared": False, "dashboard_process_verified": False,
+    observed = {"dashboard_port_declared": False, "dashboard_pid_live": False,
                 "dashboard_http_responded": False}
     def probe(home, attempt, state):
         return dashboard_ready(home, attempt, state, diagnostics=observed)

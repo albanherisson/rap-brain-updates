@@ -107,45 +107,30 @@ def dashboard_record(runtime):
     return None
 
 
-def process_cwd(pid, call):
-    result = call(["/usr/sbin/lsof", "-nP", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
-                  capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=2)
-    lines = result.stdout.splitlines()
-    if (result.returncode == 0 and not result.stderr and len(result.stdout) <= 4096
-            and len(lines) in (2, 3) and lines[0] == f"p{pid}"
-            and (len(lines) == 2 or lines[1] == "fcwd") and lines[-1].startswith("n/")):
-        return Path(lines[-1][1:]).resolve()
-    return None
-
-
-def listener_pid(port, call):
-    result = call(["/usr/sbin/lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fp"],
-                  capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=2)
-    if result.returncode or result.stderr or len(result.stdout) > 4096:
-        return None
-    lines = result.stdout.splitlines()
-    pids = [int(line[1:]) for line in lines if re.fullmatch(r"p[0-9]+", line)]
-    if (len(pids) == 1 and pids[0] > 1
-            and all(re.fullmatch(r"(?:p[0-9]+|f[0-9]+[a-zA-Z]?)", line) for line in lines)):
-        return pids[0]
-    return None
-
-
-def owned_dashboard(port, pid, runtime, resources, call):
-    if listener_pid(port, call) != pid or process_cwd(pid, call) != runtime:
+def process_is_live(pid):
+    try:
+        os.kill(pid, 0)
+    except OSError:
         return False
-    child = call(["/bin/ps", "-p", str(pid), "-o", "ppid=", "-o", "uid="],
-                 capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=2)
-    fields = child.stdout.split()
-    if (child.returncode or child.stderr or len(fields) != 2 or not fields[0].isdigit()
-            or int(fields[0]) < 2 or fields[1] != str(os.getuid())):
-        return False
-    return process_cwd(int(fields[0]), call) == resources
+    return True
 
 
 def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.client.HTTPConnection,
-                    diagnostics=None):
-    resources = (home / APP / LAUNCHER).parent
+                    live=process_is_live, diagnostics=None):
+    receipt_path = home / HANDOFF_RECEIPT
+    try:
+        if receipt_path.parent.resolve() != receipt_path.parent:
+            return False
+        expected = read_remote_json(receipt_path)
+    except (OSError, ValueError):
+        return False
+    if (type(expected) is not dict or expected.get("attempt") != attempt
+            or expected.get("state") != state):
+        return False
+
+    # The Manager writes this port/PID pair in its owner-only runtime
+    # directory. The loopback GET carries no token or attempt identifier.
+    # A live reply must match the entire private handoff receipt.
     for runtime in runtime_directories(call):
         record = dashboard_record(runtime)
         if record is None:
@@ -153,11 +138,11 @@ def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.c
         if diagnostics is not None:
             diagnostics["dashboard_port_declared"] = True
         port, pid = record["port"], record["pid"]
+        if not live(pid):
+            continue
+        if diagnostics is not None:
+            diagnostics["dashboard_pid_live"] = True
         try:
-            if not owned_dashboard(port, pid, runtime, resources, call):
-                continue
-            if diagnostics is not None:
-                diagnostics["dashboard_process_verified"] = True
             connection = connect("127.0.0.1", port, timeout=2)
             try:
                 connection.request("GET", "/api/rapbrain/manager-update-state")
@@ -170,10 +155,10 @@ def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.c
                     diagnostics["dashboard_http_responded"] = True
             finally:
                 connection.close()
-            if (type(receipt) is dict and receipt.get("attempt") == attempt and receipt.get("state") == state
-                    and owned_dashboard(port, pid, runtime, resources, call)):
+            if (receipt == expected and live(pid) and dashboard_record(runtime) == record
+                    and read_remote_json(receipt_path) == expected):
                 return True
-        except (OSError, ValueError, http.client.HTTPException, subprocess.SubprocessError):
+        except (OSError, ValueError, http.client.HTTPException):
             continue
     return False
 

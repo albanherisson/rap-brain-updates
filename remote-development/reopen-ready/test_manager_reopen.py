@@ -1,6 +1,5 @@
 import http.server
 import json
-import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -9,7 +8,7 @@ import time
 import unittest
 
 from mac_manager_install_request import (
-    APP, HANDOFF_RECEIPT, LAUNCHER, advance_install_task,
+    APP, HANDOFF_RECEIPT, advance_install_task,
     dashboard_ready, parse_install_task, reopen_manager,
 )
 from manager_remote_request import queue_remote_request, remote_directory, save_remote_receipt, write_remote_json
@@ -64,16 +63,20 @@ class ReopeningTest(unittest.TestCase):
             self.assertEqual(advance_install_task(task, **args), expected)
             self.assertEqual(calls, [(attempt, "committed")])
 
-    def test_loopback_requires_owned_listener_and_matching_attempt(self):
+    def test_loopback_requires_live_pid_and_exact_private_receipt(self):
         with tempfile.TemporaryDirectory() as scratch:
             home = Path(scratch).resolve()
-            launcher = home / APP / LAUNCHER
             attempt = "c" * 32
             calls = []
+            expected = {"attempt": attempt, "state": "committed", "installation_performed": True}
+            receipt = home / HANDOFF_RECEIPT
+            receipt.parent.mkdir(parents=True)
+            write_remote_json(receipt, expected)
+            reply = dict(expected)
             class Status(http.server.BaseHTTPRequestHandler):
                 def do_GET(self):
                     calls.append(self.path)
-                    raw = json.dumps({"attempt": attempt, "state": "committed"}).encode()
+                    raw = json.dumps(reply).encode()
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.send_header("Content-Length", str(len(raw)))
@@ -92,26 +95,15 @@ class ReopeningTest(unittest.TestCase):
                     runtime.mkdir(mode=0o700)
                     (runtime / "port.json").write_text(json.dumps({"port": port, "pid": 222}))
                     def process(args, **_):
-                        uid = os.getuid()
-                        if args[0] == "/usr/bin/getconf":
-                            out = str(home) + "\n"
-                        elif "-iTCP:" + str(port) in args:
-                            out = "p222\nf3\n"
-                        elif args[0] == "/bin/ps":
-                            out = f"111 {uid}\n"
-                        elif "222" in args:
-                            out = f"p222\nn{runtime}\n"
-                        else:
-                            out = f"p111\nfcwd\nn{launcher.parent}\n"
-                        return subprocess.CompletedProcess(args, 0, out, "")
-                    self.assertTrue(dashboard_ready(home, attempt, "committed", call=process))
-                    self.assertFalse(dashboard_ready(home, "f" * 32, "committed", call=process))
+                        self.assertEqual(args, ["/usr/bin/getconf", "DARWIN_USER_TEMP_DIR"])
+                        return subprocess.CompletedProcess(args, 0, str(home) + "\n", "")
+                    valid = dict(call=process, live=lambda pid: pid == 222)
+                    self.assertTrue(dashboard_ready(home, attempt, "committed", **valid))
+                    self.assertFalse(dashboard_ready(home, "f" * 32, "committed", **valid))
+                    reply["installation_performed"] = False
+                    self.assertFalse(dashboard_ready(home, attempt, "committed", **valid))
                     before = len(calls)
-                    def unowned(args, **_):
-                        if args[0] == "/usr/bin/getconf":
-                            return process(args)
-                        return subprocess.CompletedProcess(args, 0, "p222\np333\n", "")
-                    self.assertFalse(dashboard_ready(home, attempt, "committed", call=unowned))
+                    self.assertFalse(dashboard_ready(home, attempt, "committed", call=process, live=lambda _: False))
                     self.assertEqual(len(calls), before)
                 finally:
                     server.shutdown()
