@@ -19,6 +19,7 @@ from creative_release import Refused, canonical, digest
 from app_bundle_backup import save_app_backup
 from bootstrap_runtime_resources import RUNTIME_FILES
 from manager_offline_lifecycle import MacOfflineManagerLifecycle
+from manager_update_helper import report_result
 from manager_update_transaction import ManagerUpdateTransaction
 
 
@@ -96,26 +97,29 @@ class ManagerTransactionTests(unittest.TestCase):
         self.data = {p.name: p.read_bytes() for p in data.iterdir()}
         self.state = root / 'state'
         self.state.mkdir(mode=0o700)
+        self.prepare_release(1, self.after)
+
+    def prepare_release(self, sequence, payloads):
         key = Ed25519PrivateKey.generate()
         public = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
         self.pin = digest(public)
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, 'w') as archive:
-            for name in sorted(self.after):
-                archive.writestr(name, self.after[name])
+            for name in sorted(payloads):
+                archive.writestr(name, payloads[name])
         self.archive = stream.getvalue()
         now = int(time.time())
         self.manifest = {'schema': 'rapbrain-manager-production-v1',
-            'sequence': 1, 'issued_at': now-1, 'expires_at': now+3600,
+            'sequence': sequence, 'issued_at': now-1, 'expires_at': now+3600,
             'production_install_authorized': True, 'data_migrations': [],
             'validation': {'macos_copy_install': 'passed', 'rollback': 'passed',
                            'runtime': 'passed'},
             'files': [{'path': name, 'baseline_sha256': digest(self.before[name]),
-                       'payload_sha256': digest(self.after[name])}
-                      for name in sorted(self.after)],
+                       'payload_sha256': digest(payloads[name])}
+                      for name in sorted(payloads)],
             'required_server_sha256': digest(self.before['server.py']),
             'archive_url': ('https://raw.githubusercontent.com/albanherisson/'
-                            'rap-brain-updates/main/manager-stable/update-1.zip'),
+                            f'rap-brain-updates/main/manager-stable/update-{sequence}.zip'),
             'archive_sha256': digest(self.archive),
             'archive_bytes': len(self.archive)}
         self.signed = canonical({'signed_payload': self.manifest,
@@ -219,6 +223,31 @@ class ManagerTransactionTests(unittest.TestCase):
         result = self.tx([False, True]).install(self.signed, self.archive)
         self.assertEqual(result['state'], 'rolled_back')
         self.assertEqual(result['reason'], 'manager_health_failed')
+        self.assert_code(self.before)
+        self.assert_data()
+
+    def test_sequence_15_launcher_rollback_records_failure_in_handoff_receipt(self):
+        target = 'app/launch_manager.py'
+        self.prepare_release(15, {target: self.after[target]})
+        dashboard = self.resources / 'dashboard_beta14.html'
+        dashboard.write_bytes(b'accepted sequence 14 dashboard')
+        accepted = self.state / 'manager-accepted.json'
+        accepted.write_bytes(b'{"sequence":14}')
+        accepted.chmod(0o600)
+        transaction = self.tx([False, True])
+
+        with transaction.lifecycle.maintenance(self.source, self.launcher):
+            result = transaction.install_handed_off(self.signed, self.archive, IDENTIFIER)
+        report_result(self.state, IDENTIFIER, result)
+
+        receipt = json.loads((self.state / 'manager-handoff-result.json').read_bytes())
+        self.assertEqual(receipt, {'attempt': IDENTIFIER, 'state': 'rolled_back',
+                                   'installation_performed': False,
+                                   'reason': 'manager_health_failed'})
+        journal = json.loads((self.state / 'manager-transaction.json').read_bytes())
+        self.assertEqual((journal['sequence'], journal['phase']), (15, 'rolled_back'))
+        self.assertEqual(accepted.read_bytes(), b'{"sequence":14}')
+        self.assertEqual(dashboard.read_bytes(), b'accepted sequence 14 dashboard')
         self.assert_code(self.before)
         self.assert_data()
 
