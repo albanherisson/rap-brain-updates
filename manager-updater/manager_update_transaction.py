@@ -238,10 +238,19 @@ class ManagerUpdateTransaction(BootstrapTransaction):
             if any(digest(safe_path(targets[entry['path']]).read_bytes()) !=
                     entry['payload_sha256'] for entry in manifest['files']):
                 raise Refused('manager_installed_hash_changed')
-        except Exception:
+        except Exception as error:
             if ((folder / 'app-backup.json').is_file() and
                     (folder / 'backup.json').is_file()):
-                return self._restore(record, folder, manifest, lease)
+                reason = 'manager_update_failed_' + record['phase']
+                if isinstance(error, Refused) and str(error) in {
+                        'manager_health_failed',
+                        'manager_installed_hash_changed',
+                        'manager_lifecycle_app_inventory_changed',
+                        'manager_lifecycle_unselected_app_changed',
+                        'manager_lifecycle_candidate_app_changed',
+                        'manager_lifecycle_signature_invalid'}:
+                    reason = str(error)
+                return self._restore(record, folder, manifest, lease) | {'reason': reason}
             self._assert_excluded(lease)
             self._baseline_record(record)
             phase = 'aborted' if lease.start_and_check() else 'restored_stopped'
