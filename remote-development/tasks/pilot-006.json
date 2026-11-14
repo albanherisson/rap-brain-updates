@@ -1,0 +1,10 @@
+{
+  "schema": "rapbrain-remote-task-v2",
+  "id": "pilot-006",
+  "action": "source_validate",
+  "expected_server_sha256": "4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e16c",
+  "source_commit": "a0b917cf04ee9f4de8852a1fc093c6691f51ca05",
+  "manifest_sha256": "31cab964c01d12f7110f398ca710b372beff013b0f459dbded9effc8e9949adf",
+  "candidate_server_sha256": "4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e16c",
+  "expires_at": 1794613295
+}
