@@ -1,0 +1,1 @@
+{"schema":"rapbrain-remote-task-v3","id":"p0-decoder-29-install","sequence":29,"manifest_sha256":"c770a2010271a72bd2359f3f5c017527ee46d68048cb8f81ec3d759538b9a0fe","expected_server_sha256":"5fe0889578e477a01cd956d966bdef4c1107e3aab5ed47dd5c1ffb8750b7e2d7","expires_at":1794833408,"action":"manager_install","authorization_commit":"824a7081d60b21c625e0029e7aeabc8ff7e3d228"}
