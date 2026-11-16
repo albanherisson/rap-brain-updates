@@ -1,13 +1,23 @@
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
+import threading
 import time
-from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [
+    str(ROOT / "remote-development" / "signed-restart"),
+    str(ROOT / "remote-development" / "ollama-reusable"),
+    str(ROOT / "remote-development"),
+]
+
+import mac_manager_install_request as adapter
 import mac_manager_start_request as startup
 
 
@@ -37,25 +47,56 @@ class ManagerStartTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "request_invalid"):
             startup.parse_start_task(self.task, now=self.task["expires_at"])
 
-    def test_dashboard_belongs_to_expected_manager(self):
-        runtime = self.home / "rapbrain-manager-beta-probe"
-        record = {"port": 61234, "pid": 400}
-        launcher = self.home / startup.APP / startup.LAUNCHER
+    def test_dashboard_reuses_verified_handoff_without_assuming_parent_arguments(self):
+        installed = {"state": "committed", "attempt": "a" * 32}
+        result = self.home / startup.HANDOFF_RECEIPT
+        result.parent.mkdir(parents=True)
+        result.parent.chmod(0o700)
+        result.write_text(json.dumps(installed))
+        result.chmod(0o600)
+        endpoint = (self.home, {"port": 61234, "pid": 400})
+        with patch.object(startup, "find_verified_dashboard", return_value=endpoint) as verify:
+            self.assertEqual(startup.dashboard_endpoint(self.home, "process runner"), endpoint)
+            verify.assert_called_once_with(self.home, installed["attempt"], "committed", call="process runner")
+            verify.return_value = None
+            self.assertIsNone(startup.dashboard_endpoint(self.home, "process runner"))
+        result.unlink()
+        with patch.object(startup, "find_verified_dashboard") as verify:
+            self.assertIsNone(startup.dashboard_endpoint(self.home, "process runner"))
+            verify.assert_not_called()
 
-        def call(command, **kwargs):
-            if command[0].endswith("lsof"):
-                output = "p400\nf8\n"
-            elif command[-1] == "ppid=":
-                output = " 450\n"
-            else:
-                output = f"{os.getuid()}\t/usr/bin/python3 {launcher} --no-browser\n"
-            return SimpleNamespace(stdout=output, stderr="", returncode=0)
+    def test_loopback_dashboard_is_accepted_only_with_the_private_receipt(self):
+        receipt = {"state": "committed", "attempt": "a" * 32}
+        handoff = self.home / startup.HANDOFF_RECEIPT
+        handoff.parent.mkdir(parents=True, mode=0o700)
+        handoff.write_text(json.dumps(receipt))
+        handoff.chmod(0o600)
+        runtime = self.home / "rapbrain-manager-beta-test"
+        runtime.mkdir(mode=0o700)
 
-        with patch.object(startup, "runtime_directories", return_value=[runtime]), \
-                patch.object(startup, "dashboard_record", return_value=record):
-            self.assertEqual(startup.dashboard_endpoint(self.home, call), (runtime, record))
-            with patch.object(startup, "owns_process", return_value=False):
-                self.assertIsNone(startup.dashboard_endpoint(self.home, call))
+        class ManagerHandler(BaseHTTPRequestHandler):
+            current = receipt
+            def do_GET(self):
+                if self.path != "/api/rapbrain/manager-update-state":
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(type(self).current).encode())
+
+        manager = ThreadingHTTPServer(("127.0.0.1", 0), ManagerHandler)
+        self.addCleanup(manager.server_close)
+        thread = threading.Thread(target=manager.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(thread.join, 5)
+        self.addCleanup(manager.shutdown)
+        record = {"port": manager.server_port, "pid": os.getpid()}
+        (runtime / "port.json").write_text(json.dumps(record))
+        with patch.object(adapter, "runtime_directories", return_value=[runtime]):
+            self.assertEqual(startup.dashboard_endpoint(self.home, "process runner"), (runtime, record))
+            ManagerHandler.current = receipt | {"attempt": "b" * 32}
+            self.assertIsNone(startup.dashboard_endpoint(self.home, "process runner"))
 
     def test_cold_start_reuses_the_manager_token_endpoint_and_confirms_health(self):
         token = "a" * 40

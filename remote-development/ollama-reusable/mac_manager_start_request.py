@@ -9,11 +9,11 @@ import subprocess
 import time
 
 from mac_manager_install_request import (
-    APP, LAUNCHER, compatible_launcher, dashboard_record, open_manager,
-    runtime_directories, wait_for_manager,
+    APP, HANDOFF_RECEIPT, LAUNCHER, compatible_launcher, find_verified_dashboard,
+    open_manager, wait_for_manager,
 )
 from mac_private_source_trial import github_file, keychain_token
-from manager_remote_request import decode_remote_json
+from manager_remote_request import decode_remote_json, read_remote_json
 
 
 FIELDS = {"schema", "id", "action", "expected_server_sha256", "expires_at", "authorization_commit"}
@@ -65,28 +65,29 @@ def listener_pid(port, call):
     return None
 
 
-def owns_process(pid, launcher, call, *, server=False):
+def owns_server_process(pid, script, call):
     if pid is None:
         return False
     output = process_output(["/bin/ps", "-ww", "-p", str(pid), "-o", "uid=,command="], call)
     fields = output.split(None, 1)
     if len(fields) != 2 or fields[0] != str(os.getuid()):
         return False
-    flags = " -u " if server else " "
-    suffix = "" if server else r"(?: --no-browser)?"
-    pattern = r"[^\n]*[Pp]ython[0-9.]*" + flags + re.escape(str(launcher)) + suffix
+    pattern = r"[^\n]*[Pp]ython[0-9.]* -u " + re.escape(str(script))
     return re.fullmatch(pattern, fields[1].strip()) is not None
 
 
 def dashboard_endpoint(home, call):
-    for runtime in runtime_directories(call):
-        record = dashboard_record(runtime)
-        if record is None or listener_pid(record["port"], call) != record["pid"]:
-            continue
-        parent = process_output(["/bin/ps", "-p", str(record["pid"]), "-o", "ppid="], call)
-        if parent.isdecimal() and owns_process(int(parent), home / APP / LAUNCHER, call):
-            return runtime, record
-    return None
+    # Reuse the same private handoff proof that verifies Manager reopening after installation.
+    try:
+        receipt = read_remote_json(home / HANDOFF_RECEIPT)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(receipt, dict) or receipt.get("state") not in ("committed", "rolled_back"):
+        return None
+    attempt = receipt.get("attempt")
+    if not isinstance(attempt, str) or not re.fullmatch(r"[a-f0-9]{32}", attempt):
+        return None
+    return find_verified_dashboard(home, attempt, receipt["state"], call=call)
 
 
 def local_request(port, method, path, *, headers=None, limit=4096):
@@ -104,7 +105,7 @@ def local_request(port, method, path, *, headers=None, limit=4096):
 
 def server_ready(script, call, request):
     pid = listener_pid(8765, call)
-    if not owns_process(pid, script, call, server=True):
+    if not owns_server_process(pid, script, call):
         return False
     try:
         reply = decode_remote_json(request(8765, "GET", "/api/health"))

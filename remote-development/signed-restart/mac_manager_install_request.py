@@ -120,18 +120,18 @@ def process_is_live(pid):
     return True
 
 
-def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.client.HTTPConnection,
+def find_verified_dashboard(home, attempt, state, *, call=subprocess.run, connect=http.client.HTTPConnection,
                     live=process_is_live, diagnostics=None):
     receipt_path = home / HANDOFF_RECEIPT
     try:
         if receipt_path.parent.resolve() != receipt_path.parent:
-            return False
+            return None
         expected = read_remote_json(receipt_path)
     except (OSError, ValueError):
-        return False
+        return None
     if (type(expected) is not dict or expected.get("attempt") != attempt
             or expected.get("state") != state):
-        return False
+        return None
 
     # The Manager writes this port/PID pair in its owner-only runtime
     # directory. The loopback GET carries no token or attempt identifier.
@@ -162,11 +162,17 @@ def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.c
                 connection.close()
             if (receipt == expected and live(pid) and dashboard_record(runtime) == record
                     and read_remote_json(receipt_path) == expected):
-                return True
+                return runtime, record
         except (OSError, ValueError, http.client.HTTPException):
             continue
-    return False
+    return None
 
+
+
+def dashboard_ready(home, attempt, state, *, call=subprocess.run, connect=http.client.HTTPConnection,
+                    live=process_is_live, diagnostics=None):
+    return find_verified_dashboard(home, attempt, state, call=call, connect=connect,
+                                   live=live, diagnostics=diagnostics) is not None
 
 def wait_for_manager(app, opener, ready, *, stable=False, clock=time.monotonic, sleep=time.sleep):
     if ready():
