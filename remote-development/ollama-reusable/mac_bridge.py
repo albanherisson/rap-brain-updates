@@ -10,6 +10,7 @@ import binascii
 import fcntl
 import getpass
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -33,6 +34,7 @@ from mac_reviewed_test_trial import (run_reviewed_test, COMMIT as REVIEWED_COMMI
 from mac_manager_lab_trial import run_manager_lab, RUNNER_SHA256 as MANAGER_RUNNER_SHA
 from mac_manager_inventory import inspect as inspect_manager, running as manager_running
 from mac_manager_install_request import advance_install_task, parse_install_task
+from mac_manager_start_request import advance_start_task, parse_start_task
 from mac_manager_sign_request import SIGN_ACTIONS, parse_sign_task, private_file, run_sign_task
 from manager_remote_request import decode_remote_json
 from pathlib import Path
@@ -199,6 +201,8 @@ def read_task(task_id, get=request, now=None):
             raise ValueError("Version du test Ollama inattendue")
     elif schema == "rapbrain-remote-task-v3" and action == "manager_install":
         parse_install_task(task, now=now)
+    elif schema == "rapbrain-remote-task-v5" and action == "manager_start":
+        parse_start_task(task, now=now)
     elif schema == "rapbrain-remote-task-v4" and type(action) is str and action in SIGN_ACTIONS:
         parse_sign_task(task, now=now, allow_expired=True)
     elif schema == OLLAMA_TASK and action == "decoder_ollama_trial":
@@ -477,6 +481,15 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
             result["manager_install"]["reason"] = outcome["reason"]
         if "manager_reopened" in outcome:
             result["manager_install"]["manager_reopened"] = outcome["manager_reopened"]
+    if task["action"] == "manager_start" and result["status"] == "pass":
+        try:
+            state = advance_start_task(task)
+            result["manager_start"] = {"state": state}
+        except (OSError, ValueError, subprocess.SubprocessError, http.client.HTTPException) as error:
+            reason = str(error)
+            result["status"] = "refused"
+            result["manager_start"] = {"state": "refused", "reason": reason if re.fullmatch(
+                r"[a-z0-9_]{1,80}", reason) else "remote_manager_start_refused"}
     return result
 
 
