@@ -105,22 +105,24 @@ class ManagerStartTest(unittest.TestCase):
         record = (self.home, {"port": 61234, "pid": 400})
         with patch.object(startup, "compatible_launcher", return_value=True), \
                 patch.object(startup, "dashboard_endpoint", return_value=record), \
-                patch.object(startup, "server_ready", side_effect=[False, False, True]):
+                patch.object(startup, "server_ready", side_effect=[False, True]):
             self.assertEqual(startup.start_server(self.home, self.request, http=http, await_manager=wait), "started")
         self.assertEqual(wait.call_args.args[0], self.home / startup.APP)
         self.assertEqual(http.call_count, 2)
         http.assert_called_with(61234, "POST", "/api/rapbrain/start", headers={"X-RB-Launch-Token": token})
 
-    def test_already_running_and_changed_server_do_not_enqueue_start(self):
+    def test_already_running_opens_manager_without_enqueuing_a_second_server(self):
         http = Mock()
-        wait = Mock()
-        with patch.object(startup, "server_ready", return_value=True):
-            self.assertEqual(startup.start_server(self.home, self.request, http=http, await_manager=wait), "already_running")
+        with patch.object(startup, "server_ready", return_value=True), \
+                patch.object(startup, "manager_launch_context", return_value=(61234, "local-token")) as manager:
+            self.assertEqual(startup.start_server(self.home, self.request, http=http), "already_running")
+            self.assertEqual(manager.call_args.args, (self.home,))
+            manager.reset_mock()
             self.script.write_bytes(b"changed server")
             with self.assertRaisesRegex(ValueError, "server_changed"):
-                startup.start_server(self.home, self.request, http=http, await_manager=wait)
+                startup.start_server(self.home, self.request, http=http)
+            manager.assert_not_called()
         http.assert_not_called()
-        wait.assert_not_called()
 
 
 if __name__ == "__main__":

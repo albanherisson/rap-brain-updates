@@ -114,15 +114,12 @@ def server_ready(script, call, request):
         return False
 
 
-def start_server(home, request, *, call=subprocess.run, http=local_request, await_manager=wait_for_manager,
-                 clock=time.monotonic, sleep=time.sleep):
-    script = home / SERVER
-    verify_server(script, request["expected_server_sha256"])
-    if server_ready(script, call, http):
-        return "already_running"
+def manager_launch_context(home, *, call=subprocess.run, http=local_request, await_manager=wait_for_manager):
     if not compatible_launcher(home / APP / LAUNCHER):
         raise ValueError("remote_manager_start_launcher_changed")
-    ready = lambda: dashboard_endpoint(home, call)
+    def ready():
+        return dashboard_endpoint(home, call)
+
     failure = await_manager(home / APP, open_manager, ready, stable=True)
     if failure:
         raise ValueError(failure)
@@ -134,13 +131,21 @@ def start_server(home, request, *, call=subprocess.run, http=local_request, awai
     tokens = START_TOKEN.findall(http(port, "GET", "/", limit=64_000))
     if len(tokens) != 1 or ready() != endpoint:
         raise ValueError("remote_manager_start_dashboard_changed")
+    return port, tokens[0].decode("ascii")
+
+
+def start_server(home, request, *, call=subprocess.run, http=local_request, await_manager=wait_for_manager,
+                 clock=time.monotonic, sleep=time.sleep):
+    script = home / SERVER
+    verify_server(script, request["expected_server_sha256"])
+    port, token = manager_launch_context(home, call=call, http=http, await_manager=await_manager)
     verify_server(script, request["expected_server_sha256"])
     if time.time() >= request["expires_at"]:
         raise ValueError("remote_manager_start_request_expired")
     if server_ready(script, call, http):
         return "already_running"
     reply = decode_remote_json(http(port, "POST", "/api/rapbrain/start",
-                                    headers={"X-RB-Launch-Token": tokens[0].decode("ascii")}))
+                                    headers={"X-RB-Launch-Token": token}))
     if type(reply) is not dict or reply.get("queued") is not True:
         if server_ready(script, call, http):
             return "already_running"

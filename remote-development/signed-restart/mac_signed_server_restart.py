@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 
 
 PORT = ("https://raw.githubusercontent.com/albanherisson/rap-brain-updates/"
@@ -92,21 +93,47 @@ def release_own_ticket(path, ticket):
         path.unlink()
 
 
-def verify_restart_release(request, state, script):
-    from manager_update_release import CHANNEL, fetch, verify_manifest
+def verify_restart_release(request, state, script, *, installed_commit=None):
+    from manager_update_release import CHANNEL, NoRedirect, fetch, verify_manifest
     from pending_attempt_recovery import _private_json
+    from strict_json import parse_signed_json
 
     receipt = _private_json(state / "manager-accepted.json", 4096)
     require(type(receipt) is dict and set(receipt) == {"sequence"}
             and type(receipt["sequence"]) is int and receipt["sequence"] >= 1,
             "restart_installed_receipt_invalid")
     require(time.time() < request["expires_at"], "restart_request_expired")
-    raw = fetch(CHANNEL, 65_536)
+    verify_options = {"minimum_sequence": receipt["sequence"]}
+    if installed_commit is None:
+        raw = fetch(CHANNEL, 65_536)
+    else:
+        require(re.fullmatch(r"[a-f0-9]{40}", installed_commit) is not None,
+                "restart_release_commit_invalid")
+        channel = ("https://raw.githubusercontent.com/albanherisson/rap-brain-updates/"
+                   + installed_commit + "/manager-stable/manifest.json")
+        opener = urllib.request.build_opener(NoRedirect())
+        url = urllib.request.Request(channel, headers={"Accept-Encoding": "identity"})
+        with opener.open(url, timeout=20) as response:
+            require(response.status == 200 and response.geturl() == channel, "restart_release_changed")
+            raw = response.read(65_537)
+        require(0 < len(raw) <= 65_536, "restart_release_size")
     require(hashlib.sha256(raw).hexdigest() == request["manifest_sha256"],
             "restart_release_changed")
-    manifest = verify_manifest(raw, minimum_sequence=receipt["sequence"])
+    if installed_commit is not None:
+        # Installation freshness applies at installation. The new stop grant has its own expiry.
+        envelope = parse_signed_json(raw)
+        signed = envelope.get("signed_payload") if type(envelope) is dict else None
+        issued = signed.get("issued_at") if type(signed) is dict else None
+        require(type(issued) is int and 0 <= issued <= time.time(), "restart_release_issued_at_invalid")
+        verify_options = {"minimum_sequence": receipt["sequence"] - 1, "now": issued}
+    manifest = verify_manifest(raw, **verify_options)
+    expected = manifest["required_server_sha256"]
+    if installed_commit is not None:
+        require(receipt["sequence"] == manifest["sequence"], "restart_installed_sequence_mismatch")
+        expected = next((member["payload_sha256"] for member in manifest["files"]
+                         if member["path"] == "server.py"), expected)
     require(manifest["sequence"] == request["sequence"]
-            and manifest["required_server_sha256"] == request["expected_server_sha256"],
+            and expected == request["expected_server_sha256"],
             "restart_release_baseline_mismatch")
     require(server_digest(script) == request["expected_server_sha256"],
             "restart_server_version_changed")
@@ -119,7 +146,7 @@ def server_digest(script):
     return hashlib.sha256(data).hexdigest()
 
 
-def prepare_restart(home, request):
+def prepare_restart(home, request, *, installed_commit=None):
     from authenticated_runtime_client import read_runtime_proof, assert_owned_listener
     from creative_readiness import assert_no_pending_jobs
     from creative_transaction import safe_path
@@ -129,12 +156,12 @@ def prepare_restart(home, request):
     from worker_activity_gate import _lock, _state, begin_maintenance
 
     parent = listener()
-    if parent is None:
+    if parent is None and installed_commit is None:
         return "already_stopped"
     source = safe_path(home / "Downloads/rap-brain", directory=True)
     script = safe_path(source / "server.py")
     state = _state(home / "Downloads/RapBrainManagerBackups/secure-update")
-    verify_restart_release(request, state, script)
+    verify_restart_release(request, state, script, installed_commit=installed_commit)
     marker = state / "maintenance.ticket"
     require(not os.path.lexists(marker) and not any(os.path.lexists(state / name) for name in INTENTS),
             "restart_existing_maintenance")
@@ -144,6 +171,8 @@ def prepare_restart(home, request):
             require(journal.get("phase") in ("committed", "rolled_back", "aborted", "restored_stopped"),
                     "restart_existing_maintenance")
 
+    if parent is None:
+        return "already_stopped"
     worker = process_group(parent, script)
     token = runtime_token(parent)
     identity = read_start(parent), read_start(worker)
@@ -197,8 +226,8 @@ def prepare_restart(home, request):
 
 
 def main():
-    require(sys.platform == "darwin" and len(sys.argv) == 1, "restart_macos_required")
-    if listener() is None:
+    require(sys.platform == "darwin" and sys.argv[1:] in ([], ["--installed"]), "restart_macos_required")
+    if not sys.argv[1:] and listener() is None:
         print(json.dumps({"status": "pass", "server": "already_stopped"}))
         return
     sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -207,12 +236,19 @@ def main():
 
     raw = sys.stdin.buffer.read(4097)
     require(0 < len(raw) <= 4096, "restart_request_size")
-    request = validate_remote_request(decode_remote_json(raw))
+    request = decode_remote_json(raw)
+    installed_commit = None
+    if sys.argv[1:]:
+        require(type(request) is dict, "restart_request_invalid")
+        installed_commit = request.pop("release_commit", None)
+        require(type(installed_commit) is str and re.fullmatch(r"[a-f0-9]{40}", installed_commit),
+                "restart_release_commit_invalid")
+    validate_remote_request(request)
     home = Path.home().resolve()
     with tempfile.TemporaryDirectory(prefix="rapbrain-restart-") as directory:
         helper, _ = verified_helpers(home, Path(directory).resolve())
         sys.path.insert(0, str(helper))
-        result = prepare_restart(home, request)
+        result = prepare_restart(home, request, installed_commit=installed_commit)
     print(json.dumps({"status": "pass", "server": result}))
 
 

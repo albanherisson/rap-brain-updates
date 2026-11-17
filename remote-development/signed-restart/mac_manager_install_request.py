@@ -28,7 +28,7 @@ HANDOFF_RECEIPT = Path("Downloads/RapBrainManagerBackups/secure-update/manager-h
 OPEN_WINDOWS = (10, 20, 40)
 REOPEN_POLL = 0.75
 RESTART_HELPER = "mac_signed_server_restart.py"
-RESTART_SHA = "12bbfd8ed4e67107a4f5caf8ee88a1c1d82647a73679f7bc11a9df66e6eae97c"
+RESTART_SHA = "6ea81d309f20a479164dcae48819868158970bb029f7ca3c44c8082dbf936032"
 
 
 def parse_install_task(task, now=None):
@@ -212,14 +212,17 @@ def reopen_manager(home, attempt, state, *, opener=open_manager, probe=dashboard
     return failure is None
 
 
-def restart_foreign_server(home, request, call=subprocess.run):
+def restart_foreign_server(home, request, call=subprocess.run, *, installed=False):
     script = Path(__file__).resolve().with_name(RESTART_HELPER)
     if script.is_symlink() or not script.is_file() or hashlib.sha256(script.read_bytes()).hexdigest() != RESTART_SHA:
         raise ValueError("remote_manager_restart_code_mismatch")
     with tempfile.TemporaryDirectory(prefix="rapbrain-authorized-server-restart-") as temporary:
         root = Path(temporary).resolve()
         env = {"HOME": str(home), "TMPDIR": str(root), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
-        result = call([sys.executable, "-I", "-B", str(script)], cwd=root, env=env,
+        command = [sys.executable, "-I", "-B", str(script)]
+        if installed:
+            command.append("--installed")
+        result = call(command, cwd=root, env=env,
                       input=json.dumps(request).encode(), capture_output=True, timeout=120)
         if result.returncode != 0:
             try:
@@ -237,6 +240,7 @@ def restart_foreign_server(home, request, call=subprocess.run):
         if proof not in ({"status": "pass", "server": "stopped"},
                          {"status": "pass", "server": "already_stopped"}):
             raise ValueError("remote_manager_server_stop_unproven")
+        return proof["server"]
 
 
 def compatible_launcher(launcher):
