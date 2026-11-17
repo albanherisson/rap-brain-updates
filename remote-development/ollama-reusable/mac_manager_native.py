@@ -12,6 +12,7 @@ from manager_remote_request import decode_remote_json
 SWIFT = r'''import AppKit
 import CoreGraphics
 import Foundation
+import Security
 
 struct Request: Decodable {
     let app: String
@@ -42,13 +43,65 @@ guard appURL.resolvingSymlinksInPath().path == appURL.path,
     fail("remote_manager_native_app_missing")
 }
 
+func codeHash(_ code: SecStaticCode) -> Data? {
+    var information: CFDictionary?
+    guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: 0), &information) == errSecSuccess,
+          let values = information as? [String: Any],
+          let hash = values[kSecCodeInfoUnique as String] as? Data,
+          hash.count >= 20 else { return nil }
+    return hash
+}
+
+func validatedStaticCode(_ url: URL) -> SecStaticCode? {
+    var code: SecStaticCode?
+    guard SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(rawValue: 0), &code) == errSecSuccess,
+          let code = code,
+          SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSStrictValidate | kSecCSCheckNestedCode), nil) == errSecSuccess else {
+        return nil
+    }
+    return code
+}
+
+guard let expectedCode = validatedStaticCode(appURL),
+      let expectedHash = codeHash(expectedCode),
+      let expectedIdentifier = Bundle(url: appURL)?.bundleIdentifier else {
+    fail("remote_manager_native_expected_signature_unverified")
+}
+
+func identityFailure(_ app: NSRunningApplication) -> String? {
+    if app.isTerminated { return "remote_manager_native_launch_exited" }
+    guard app.bundleIdentifier == expectedIdentifier else {
+        return "remote_manager_native_bundle_identifier_mismatch"
+    }
+    guard let bundleURL = app.bundleURL else { return "remote_manager_native_bundle_url_missing" }
+    guard let executable = app.executableURL else { return "remote_manager_native_executable_url_missing" }
+    let actual = bundleURL.standardizedFileURL.resolvingSymlinksInPath()
+    guard executable.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(actual.path + "/Contents/MacOS/") else {
+        return "remote_manager_native_executable_outside_bundle"
+    }
+    // Gatekeeper may launch a copy at another URL. Validate its sealed code,
+    // resources and loaded process against the exact reviewed app version.
+    guard let staticCode = validatedStaticCode(actual), codeHash(staticCode) == expectedHash else {
+        return "remote_manager_native_bundle_signature_mismatch"
+    }
+    var runningCode: SecCode?
+    let attributes = [kSecGuestAttributePid as String: NSNumber(value: app.processIdentifier)] as CFDictionary
+    guard SecCodeCopyGuestWithAttributes(nil, attributes, SecCSFlags(rawValue: 0), &runningCode) == errSecSuccess,
+          let runningCode = runningCode,
+          SecCodeCheckValidity(runningCode, SecCSFlags(rawValue: 0), nil) == errSecSuccess else {
+        return "remote_manager_native_process_signature_unverified"
+    }
+    var loadedStaticCode: SecStaticCode?
+    guard SecCodeCopyStaticCode(runningCode, SecCSFlags(rawValue: 0), &loadedStaticCode) == errSecSuccess,
+          let loadedStaticCode = loadedStaticCode, codeHash(loadedStaticCode) == expectedHash else {
+        return "remote_manager_native_process_signature_mismatch"
+    }
+    return nil
+}
+
 func belongsToManager(_ app: NSRunningApplication) -> Bool {
-    guard let bundleURL = app.bundleURL,
-          let executable = app.executableURL else { return false }
-    // Compare canonical paths: URL directory flags must not change identity.
-    return bundleURL.standardizedFileURL.resolvingSymlinksInPath().path == appURL.path
-        && executable.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(appURL.path + "/Contents/MacOS/")
-        && !app.isTerminated
+    // Filter unrelated apps before any signature inspection.
+    return app.bundleIdentifier == expectedIdentifier && identityFailure(app) == nil
 }
 
 func applications() -> [NSRunningApplication] {
@@ -72,8 +125,12 @@ func windowExists(_ app: NSRunningApplication) -> Bool {
 }
 
 let found = applications()
-guard found.count <= 1 else { fail("remote_manager_native_multiple_instances") }
+guard found.count <= 8 else { fail("remote_manager_native_too_many_instances") }
 if request.operation == "open" {
+    if let app = found.first(where: windowExists) {
+        app.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
+        output("running", true, true)
+    }
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = true
     configuration.addsToRecentItems = false
@@ -86,15 +143,14 @@ if request.operation == "open" {
                 let code = String((error as NSError).code).replacingOccurrences(of: "-", with: "n")
                 fail("remote_manager_native_launch_error_" + code)
             }
-            guard let app = launched, belongsToManager(app) else {
-                fail("remote_manager_native_launch_identity_unverified")
-            }
+            guard let app = launched else { fail("remote_manager_native_launch_result_missing") }
             let deadline = Date().addingTimeInterval(20)
             while Date() < deadline {
                 if app.isTerminated { fail("remote_manager_native_launch_exited") }
+                if let reason = identityFailure(app) { fail(reason) }
                 let current = applications()
-                guard current.count <= 1 else { fail("remote_manager_native_multiple_instances") }
-                if current.first?.processIdentifier == app.processIdentifier && windowExists(app) {
+                guard current.count <= 8 else { fail("remote_manager_native_too_many_instances") }
+                if current.contains(where: { $0.processIdentifier == app.processIdentifier }) && windowExists(app) {
                     output("running", true, true)
                 }
                 RunLoop.current.run(until: Date().addingTimeInterval(0.1))
@@ -108,16 +164,19 @@ if request.operation == "open" {
     }
     fail("remote_manager_native_launch_timeout")
 }
-guard let app = found.first else { output("already_closed", false, false) }
-let shown = windowExists(app)
+guard !found.isEmpty else { output("already_closed", false, false) }
+let shown = found.contains(where: windowExists)
 if request.operation == "snapshot" {
     output("running", true, shown)
 }
-guard app.terminate() else { fail("remote_manager_native_quit_refused") }
+for app in found {
+    if let reason = identityFailure(app) { fail(reason) }
+    guard app.terminate() else { fail("remote_manager_native_quit_refused") }
+}
 let deadline = Date().addingTimeInterval(20)
 while Date() < deadline {
     RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-    if app.isTerminated && applications().isEmpty {
+    if found.allSatisfy({ $0.isTerminated }) && applications().isEmpty {
         output("closed", true, false)
     }
 }

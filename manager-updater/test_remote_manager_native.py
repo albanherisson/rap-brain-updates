@@ -30,7 +30,7 @@ class ManagerNativeTest(unittest.TestCase):
         accepted.start()
         self.addCleanup(accepted.stop)
 
-    def test_graceful_close_targets_only_the_reviewed_app_path(self):
+    def test_graceful_close_pins_the_reviewed_app_as_its_identity_reference(self):
         self.assertEqual(native.native_request(self.home, "close", call=self.call),
                          {"state": "closed", "was_running": True, "window_present": False})
         first, second = self.call.call_args_list
@@ -60,6 +60,12 @@ class ManagerNativeTest(unittest.TestCase):
         self.result.returncode = 2
         self.result.stderr = b'remote_manager_native_launch_error_n10810'
         with self.assertRaisesRegex(ValueError, "launch_error_n10810"):
+            native.native_request(self.home, "open", call=self.call)
+
+    def test_signature_mismatch_is_reported_without_a_success_reply(self):
+        self.result.returncode = 2
+        self.result.stderr = b'remote_manager_native_process_signature_mismatch'
+        with self.assertRaisesRegex(ValueError, "process_signature_mismatch"):
             native.native_request(self.home, "open", call=self.call)
 
     def test_unreviewed_error_text_is_not_published(self):

@@ -52,7 +52,8 @@ WITH_NATIVE_WINDOW = {
     LIFECYCLE: "d467878fb715b5bef6f30fa68627899554f050d31359f07ed72dd5e0d2726ef3",
     NATIVE: "13d4c58d846d30da372b46beea1c8653b0ba3d0a22a2e3891829a5f5604039a0",
 }
-INCOMING = WITH_NATIVE_WINDOW | {'mac_manager_lifecycle_request.py': '5fc6bb14483029176e2379788dd9d66110bbd40178f2d5578bedc08bc35e6065', 'mac_manager_native.py': 'e8b77d3d7b537ee103a6479810899fae65b68a565a62d48bbf33fffdd799b3c1'}
+WITH_NATIVE_LAUNCH = WITH_NATIVE_WINDOW | {'mac_manager_lifecycle_request.py': '5fc6bb14483029176e2379788dd9d66110bbd40178f2d5578bedc08bc35e6065', 'mac_manager_native.py': 'e8b77d3d7b537ee103a6479810899fae65b68a565a62d48bbf33fffdd799b3c1'}
+INCOMING = WITH_NATIVE_LAUNCH | {NATIVE: 'f08eb84f93344df2f975f52f0ca9af682202d6647237d104ee181e235a4dd852'}
 
 
 def matches(path, expected):
@@ -85,7 +86,7 @@ def main():
         if compiled.returncode:
             raise ValueError("Le contrôle natif du Manager n’a pas pu être compilé.")
     if not all(matches(target / name, digest) for name, digest in INCOMING.items()):
-        baseline = next((version for version in (BASELINE, WITH_DASHBOARD_PROOF, WITH_LIFECYCLE, WITH_EXIT_CHECK, WITH_NATIVE_WINDOW)
+        baseline = next((version for version in (BASELINE, WITH_DASHBOARD_PROOF, WITH_LIFECYCLE, WITH_EXIT_CHECK, WITH_NATIVE_WINDOW, WITH_NATIVE_LAUNCH)
                          if all(matches(target / name, digest) for name, digest in version.items())), None)
         if baseline is None:
             raise ValueError("La version installée du pont est inattendue.")
@@ -101,7 +102,7 @@ def main():
         result = subprocess.run(["/bin/launchctl", "print", f"gui/{os.getuid()}/{LABEL}"],
                                 capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=5)
         if result.returncode == 0 and re.search(r"^\s*state = running\s*$", result.stdout, re.MULTILINE):
-            print("Lancement natif du Manager et redémarrage distants activés.")
+            print("Identification signée du Manager et redémarrage distants activés.")
             return
         time.sleep(0.5)
     raise ValueError("La relance du pont n’a pas été confirmée.")
