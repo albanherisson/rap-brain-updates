@@ -28,11 +28,18 @@ WITH_DASHBOARD_PROOF = BASELINE | {
     ADAPTER: "4db7de0efb15f7cae34d6312ac00688e0caa7358661529115ccb50c50279c2bf",
     STARTUP: "89ed14eb8f72ec6e32f94b082dfd9f7a8a80ecd100dafcef7e653a3d05bef6a4",
 }
+WITH_LIFECYCLE = {
+    "mac_bridge.py": "2f72f81a43b8a2ed80b6dc3d5f1c729cfbad043fae1c5a95f4250c68e0e4b629",
+    "mac_manager_start_request.py": "880abb06c441cd975e3b9f8b7f7daad4f289663d861e1385ac42eab4e6e7f121",
+    "mac_manager_install_request.py": "9657669b3c569e6727021206710b0889bc5f4769abace5ce56b876e37a1e1767",
+    "mac_signed_server_restart.py": "6ea81d309f20a479164dcae48819868158970bb029f7ca3c44c8082dbf936032",
+    "mac_manager_lifecycle_request.py": "76f00318f8c2636d4dc435f09b6226790ef1e9fdc06534d5f4207397b97fccde",
+}
 INCOMING = {
     BRIDGE: "2f72f81a43b8a2ed80b6dc3d5f1c729cfbad043fae1c5a95f4250c68e0e4b629",
-    ADAPTER: "9657669b3c569e6727021206710b0889bc5f4769abace5ce56b876e37a1e1767",
+    ADAPTER: "10541d31caf62a4c2035b2292caa830c38e0b73c3b0c10c955ed1abf620f2aa9",
     STARTUP: "880abb06c441cd975e3b9f8b7f7daad4f289663d861e1385ac42eab4e6e7f121",
-    STOP: "6ea81d309f20a479164dcae48819868158970bb029f7ca3c44c8082dbf936032",
+    STOP: "7d3b2d04b2d3c09ab100f9e9c781b4720daabcbcec55009f083386abadcad7dc",
     LIFECYCLE: "76f00318f8c2636d4dc435f09b6226790ef1e9fdc06534d5f4207397b97fccde",
 }
 
@@ -59,13 +66,14 @@ def main():
     if not callable(mac_bridge.advance_lifecycle_task):
         raise ValueError("Le module de redémarrage distant est indisponible.")
     if not all(matches(target / name, digest) for name, digest in INCOMING.items()):
-        baseline = next((version for version in (BASELINE, WITH_DASHBOARD_PROOF)
+        baseline = next((version for version in (BASELINE, WITH_DASHBOARD_PROOF, WITH_LIFECYCLE)
                          if all(matches(target / name, digest) for name, digest in version.items())), None)
         if baseline is None:
             raise ValueError("La version installée du pont est inattendue.")
-        replacements = {name: digest for name, digest in INCOMING.items() if name != LIFECYCLE}
+        additions = {} if LIFECYCLE in baseline else {LIFECYCLE: INCOMING[LIFECYCLE]}
+        replacements = {name: digest for name, digest in INCOMING.items() if name not in additions}
         upgrade_manager_bridge(home, source, subprocess.run, baseline, replacements,
-                               additions={LIFECYCLE: INCOMING[LIFECYCLE]})
+                               additions=additions)
     if not all(matches(target / name, digest) for name, digest in INCOMING.items()):
         raise ValueError("La version installée du pont n’a pas été confirmée.")
 

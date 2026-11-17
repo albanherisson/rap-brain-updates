@@ -1,7 +1,9 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import time
 from types import SimpleNamespace
@@ -20,6 +22,35 @@ import mac_signed_server_restart as signed
 
 
 class ManagerLifecycleTest(unittest.TestCase):
+    def test_process_inventory_keeps_running_children_and_excludes_exited_children(self):
+        result = SimpleNamespace(returncode=0, stderr="", stdout=(
+            "10 1 10 501 Ss /usr/bin/python3 -u /fixture/server.py\n"
+            "11 10 10 501 Z+ (python3)\n"
+            "12 10 10 501 S /usr/bin/python3 /fixture/server.py --worker\n"))
+        with patch.object(signed, "command", return_value=result) as command:
+            self.assertEqual(signed.process_rows(), {
+                10: (1, 10, 501, "/usr/bin/python3 -u /fixture/server.py"),
+                12: (10, 10, 501, "/usr/bin/python3 /fixture/server.py --worker")})
+            self.assertIn("stat=", command.call_args.args[0][-1])
+
+    @unittest.skipUnless(hasattr(os, "fork"), "requires POSIX waitpid")
+    def test_exited_unreaped_child_does_not_block_exit_verification(self):
+        child = os.fork()
+        if child == 0:
+            os._exit(0)
+        try:
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                state = subprocess.run(["/bin/ps", "-p", str(child), "-o", "stat="],
+                                       capture_output=True, text=True, check=True).stdout.strip()
+                if state.startswith("Z"):
+                    break
+                time.sleep(0.02)
+            self.assertTrue(state.startswith("Z"), state)
+            self.assertNotIn(child, signed.process_rows())
+        finally:
+            os.waitpid(child, 0)
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

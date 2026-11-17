@@ -28,7 +28,7 @@ HANDOFF_RECEIPT = Path("Downloads/RapBrainManagerBackups/secure-update/manager-h
 OPEN_WINDOWS = (10, 20, 40)
 REOPEN_POLL = 0.75
 RESTART_HELPER = "mac_signed_server_restart.py"
-RESTART_SHA = "6ea81d309f20a479164dcae48819868158970bb029f7ca3c44c8082dbf936032"
+RESTART_SHA = "7d3b2d04b2d3c09ab100f9e9c781b4720daabcbcec55009f083386abadcad7dc"
 
 
 def parse_install_task(task, now=None):

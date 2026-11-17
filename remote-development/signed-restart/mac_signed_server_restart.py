@@ -51,17 +51,21 @@ def listener():
 
 
 def process_rows():
-    result = command(["/bin/ps", "-axww", "-o", "pid=,ppid=,pgid=,uid=,command="])
+    result = command(["/bin/ps", "-axww", "-o", "pid=,ppid=,pgid=,uid=,stat=,command="])
     require(result.returncode == 0 and not result.stderr
             and 0 < len(result.stdout) <= 2_000_000, "restart_process_inventory_failed")
     rows = {}
     for line in result.stdout.splitlines():
-        parts = line.split(None, 4)
-        require(len(parts) == 5 and all(re.fullmatch(r"-?[0-9]+", value) for value in parts[:4]),
+        parts = line.split(None, 5)
+        require(len(parts) == 6 and all(re.fullmatch(r"-?[0-9]+", value) for value in parts[:4])
+                and re.fullmatch(r"[A-Za-z][A-Za-z0-9+<>=*:-]*", parts[4]),
                 "restart_process_inventory_invalid")
         pid, ppid, pgid, uid = map(int, parts[:4])
         require(pid not in rows, "restart_process_inventory_invalid")
-        rows[pid] = (ppid, pgid, uid, parts[4])
+        # A child that exited can remain in ps until its owner calls waitpid().
+        # It has no running code. The loop also requires the listening port to be closed.
+        if not parts[4].startswith("Z"):
+            rows[pid] = (ppid, pgid, uid, parts[5])
     return rows
 
 
