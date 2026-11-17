@@ -70,10 +70,42 @@ class ManagerLifecycleTest(unittest.TestCase):
         self.stop = Mock(return_value="stopped")
         self.manager = Mock()
         self.start = Mock(return_value="started")
+        self.native = Mock(return_value={"state": "closed", "was_running": True, "window_present": False})
+        self.show_window = Mock(return_value={"state": "running", "was_running": True, "window_present": True})
 
     def advance(self):
         return lifecycle.advance_lifecycle_task(self.task, home=self.home, authorize=self.authorize,
-                                                stop=self.stop, launch_manager=self.manager, start=self.start)
+                                                stop=self.stop, launch_manager=self.manager, start=self.start,
+                                                native=self.native, show_window=self.show_window)
+
+    def test_reopen_closes_native_application_and_observes_the_new_window(self):
+        self.task["action"] = "manager_reopen"
+        order = []
+        self.stop.side_effect = lambda *args, **kwargs: order.append("server_stopped") or "stopped"
+        self.start.side_effect = lambda *args, **kwargs: order.append("server_started") or "started"
+        self.native.side_effect = lambda *args, **kwargs: order.append("manager_closed") or {
+            "state": "closed", "was_running": True, "window_present": False}
+        self.show_window.side_effect = lambda *args, **kwargs: order.append("window_present")
+        result = self.advance()
+        self.assertEqual(order, ["window_present", "server_stopped", "manager_closed",
+                                 "window_present", "server_started"])
+        self.assertTrue(result["manager_closed"])
+        self.assertTrue(result["manager_close_observed"])
+        self.assertTrue(result["manager_reopened"])
+        self.assertTrue(result["manager_window_present"])
+        self.assertEqual(result["state"], "restarted")
+        self.assertEqual(self.advance(), result)
+        self.native.assert_called_once_with(self.home, "close")
+        self.stop.assert_called_once()
+        self.start.assert_called_once()
+
+    def test_reopen_does_not_stop_the_server_if_its_initial_window_is_unverified(self):
+        self.task["action"] = "manager_reopen"
+        self.show_window.side_effect = ValueError("remote_manager_native_window_unverified")
+        with self.assertRaisesRegex(ValueError, "window_unverified"):
+            self.advance()
+        self.stop.assert_not_called()
+        self.native.assert_not_called()
 
     def test_authorization_binds_operation_manifest_and_commit(self):
         grant = lifecycle.parse_lifecycle_task(self.task)

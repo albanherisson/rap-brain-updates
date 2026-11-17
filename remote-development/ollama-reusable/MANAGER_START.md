@@ -8,6 +8,8 @@ Les actions `manager_stop` et `manager_restart` utilisent `rapbrain-remote-task-
 
 Le démarrage réutilise la preuve privée du dernier retour de mise à jour pour identifier le Manager sur la boucle locale.
 
+L’action `manager_reopen` utilise la même autorisation de cycle. Elle vérifie une fenêtre native du Manager, attend un serveur libre, arrête Rap Brain proprement, quitte l’application Manager puis rouvre sa fenêtre et relance Rap Brain. Le résultat expose séparément `manager_close_observed`, `manager_reopened` et `manager_window_present`. Le contrôle natif utilise uniquement le chemin de cette application et la présence de sa fenêtre, sans lire les titres ou contenus des autres fenêtres.
+
 L’activation unique utilise `mac_activate_manager_start.py` avec les fichiers `mac_manager_install_request.py`, `mac_manager_start_request.py` et `../mac_install_agent.py` placés dans le même dossier. L’installateur existant vérifie la version installée, relance l’agent et restaure ses fichiers si la relance échoue. Les demandes d’installation signée continuent d’utiliser le même Manager.
 
 `mac_activate_manager_lifecycle.py` met à niveau les deux versions précédentes du démarrage distant et inclut le contrôle corrigé du Manager. Il réutilise la même installation locale de l’agent.

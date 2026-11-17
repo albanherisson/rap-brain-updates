@@ -8,6 +8,7 @@ import time
 
 from mac_manager_install_request import request_lock, restart_foreign_server
 from mac_manager_start_request import SERVER, manager_launch_context, start_server, verify_server
+from mac_manager_native import native_request, open_native_window
 from mac_private_source_trial import github_file, keychain_token
 from manager_remote_request import (
     REMOTE_REQUEST_SCHEMA, decode_remote_json, read_remote_json, remote_digest,
@@ -15,7 +16,7 @@ from manager_remote_request import (
 )
 
 
-ACTIONS = frozenset(("manager_stop", "manager_restart"))
+ACTIONS = frozenset(("manager_stop", "manager_restart", "manager_reopen"))
 SCHEMA = "rapbrain-manager-lifecycle-v1"
 BUSY_REASONS = frozenset(("worker_busy_or_maintenance", "jobs_active_or_unknown_status"))
 RECOVERY_SECONDS = 600
@@ -55,14 +56,16 @@ def authorize_lifecycle(task, request, *, fetch=github_file, token=keychain_toke
 
 
 def advance_lifecycle_task(task, *, home=None, authorize=authorize_lifecycle, stop=restart_foreign_server,
-                           launch_manager=manager_launch_context, start=start_server, now=time.time):
+                           launch_manager=manager_launch_context, start=start_server, now=time.time,
+                           native=native_request, show_window=open_native_window):
     request = parse_lifecycle_task(task)
     authorize(task, request)
     home = Path.home().resolve() if home is None else Path(home)
     directory = remote_directory(home, create=True)
     path = directory / ("lifecycle-" + request["id"] + ".json")
     digest = remote_digest(request)
-    restart = request["action"] == "manager_restart"
+    reopen = request["action"] == "manager_reopen"
+    restart = request["action"] in ("manager_restart", "manager_reopen")
     with request_lock(directory) as acquired:
         if not acquired:
             return {"state": "pending"}
@@ -78,6 +81,8 @@ def advance_lifecycle_task(task, *, home=None, authorize=authorize_lifecycle, st
             if restart:
                 # Prove the route back before stopping the running server.
                 launch_manager(home)
+            if reopen:
+                show_window(home)
             try:
                 stopped = stop(home, stop_request(request) | {"release_commit": request["release_commit"]},
                                installed=True)
@@ -91,6 +96,22 @@ def advance_lifecycle_task(task, *, home=None, authorize=authorize_lifecycle, st
             write_remote_json(path, previous)
         if not restart:
             return {"state": previous["stop"]}
+        if reopen and not previous.get("manager_closed"):
+            if now() >= request["expires_at"]:
+                return {"state": "refused", "stop": previous["stop"], "reason": "remote_manager_close_request_expired"}
+            if not previous.get("manager_close_requested"):
+                previous["manager_close_requested"] = True
+                write_remote_json(path, previous)
+            closed = native(home, "close")
+            if closed["state"] not in ("closed", "already_closed"):
+                raise ValueError("remote_manager_native_close_not_observed")
+            previous["manager_closed"] = True
+            previous["manager_close_observed"] = closed["state"] == "closed" and closed["was_running"] is True
+            write_remote_json(path, previous)
+        if reopen:
+            if now() >= request["expires_at"] + RECOVERY_SECONDS:
+                return {"state": "refused", "stop": previous["stop"], "reason": "remote_manager_restart_recovery_expired"}
+            show_window(home)
         if previous["start"] is None:
             # A restart whose shutdown was already verified may finish during recovery.
             recovery = request["expires_at"] + RECOVERY_SECONDS
@@ -103,5 +124,9 @@ def advance_lifecycle_task(task, *, home=None, authorize=authorize_lifecycle, st
                     return {"state": "refused", "stop": previous["stop"], "reason": str(error)}
                 return {"state": "pending"}
             write_remote_json(path, previous)
-        return {"state": "restarted" if previous["stop"] == "stopped" else "started",
-                "stop": previous["stop"], "start": previous["start"], "manager_verified": True}
+        result = {"state": "restarted" if previous["stop"] == "stopped" else "started",
+                  "stop": previous["stop"], "start": previous["start"], "manager_verified": True}
+        if reopen:
+            result.update(manager_closed=True, manager_close_observed=previous["manager_close_observed"],
+                          manager_reopened=True, manager_window_present=True)
+        return result
