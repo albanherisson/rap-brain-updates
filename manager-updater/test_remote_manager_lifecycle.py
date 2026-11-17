@@ -107,6 +107,29 @@ class ManagerLifecycleTest(unittest.TestCase):
         self.stop.assert_not_called()
         self.native.assert_not_called()
 
+    def test_failed_native_reopening_recovers_server_without_claiming_success(self):
+        self.task["action"] = "manager_reopen"
+        self.show_window.side_effect = [None, ValueError("remote_manager_native_launch_error_n10810")]
+        result = self.advance()
+        self.assertEqual(result, {"state": "refused", "stop": "stopped", "start": "started",
+                                  "reason": "remote_manager_native_launch_error_n10810", "server_recovered": True})
+        self.stop.assert_called_once()
+        self.start.assert_called_once()
+        self.assertEqual(self.advance(), result)
+        self.native.assert_called_once()
+
+    def test_native_close_failure_recovers_server_and_waits_for_health(self):
+        self.task["action"] = "manager_reopen"
+        self.native.side_effect = ValueError("remote_manager_native_quit_refused")
+        self.start.side_effect = [ValueError("remote_manager_start_health_unverified"), "started"]
+        self.assertEqual(self.advance(), {"state": "pending"})
+        result = self.advance()
+        self.assertEqual(result["state"], "refused")
+        self.assertTrue(result["server_recovered"])
+        self.stop.assert_called_once()
+        self.native.assert_called_once()
+        self.assertEqual(self.start.call_count, 2)
+
     def test_authorization_binds_operation_manifest_and_commit(self):
         grant = lifecycle.parse_lifecycle_task(self.task)
         fetch = Mock(return_value=json.dumps(grant).encode())

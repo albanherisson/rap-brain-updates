@@ -96,22 +96,27 @@ def advance_lifecycle_task(task, *, home=None, authorize=authorize_lifecycle, st
             write_remote_json(path, previous)
         if not restart:
             return {"state": previous["stop"]}
-        if reopen and not previous.get("manager_closed"):
-            if now() >= request["expires_at"]:
-                return {"state": "refused", "stop": previous["stop"], "reason": "remote_manager_close_request_expired"}
-            if not previous.get("manager_close_requested"):
-                previous["manager_close_requested"] = True
+        if reopen and not previous.get("native_failure"):
+            try:
+                if not previous.get("manager_closed"):
+                    if now() >= request["expires_at"]:
+                        raise ValueError("remote_manager_close_request_expired")
+                    if not previous.get("manager_close_requested"):
+                        previous["manager_close_requested"] = True
+                        write_remote_json(path, previous)
+                    closed = native(home, "close")
+                    if closed["state"] not in ("closed", "already_closed"):
+                        raise ValueError("remote_manager_native_close_not_observed")
+                    previous["manager_closed"] = True
+                    previous["manager_close_observed"] = closed["state"] == "closed" and closed["was_running"] is True
+                    write_remote_json(path, previous)
+                if now() >= request["expires_at"] + RECOVERY_SECONDS:
+                    raise ValueError("remote_manager_restart_recovery_expired")
+                show_window(home)
+            except (OSError, ValueError, http.client.HTTPException, subprocess.SubprocessError) as error:
+                reason = str(error)
+                previous["native_failure"] = reason if re.fullmatch(r"[a-z0-9_]{1,80}", reason) else "remote_manager_native_failed"
                 write_remote_json(path, previous)
-            closed = native(home, "close")
-            if closed["state"] not in ("closed", "already_closed"):
-                raise ValueError("remote_manager_native_close_not_observed")
-            previous["manager_closed"] = True
-            previous["manager_close_observed"] = closed["state"] == "closed" and closed["was_running"] is True
-            write_remote_json(path, previous)
-        if reopen:
-            if now() >= request["expires_at"] + RECOVERY_SECONDS:
-                return {"state": "refused", "stop": previous["stop"], "reason": "remote_manager_restart_recovery_expired"}
-            show_window(home)
         if previous["start"] is None:
             # A restart whose shutdown was already verified may finish during recovery.
             recovery = request["expires_at"] + RECOVERY_SECONDS
@@ -124,6 +129,9 @@ def advance_lifecycle_task(task, *, home=None, authorize=authorize_lifecycle, st
                     return {"state": "refused", "stop": previous["stop"], "reason": str(error)}
                 return {"state": "pending"}
             write_remote_json(path, previous)
+        if previous.get("native_failure"):
+            return {"state": "refused", "stop": previous["stop"], "start": previous["start"],
+                    "reason": previous["native_failure"], "server_recovered": True}
         result = {"state": "restarted" if previous["stop"] == "stopped" else "started",
                   "stop": previous["stop"], "start": previous["start"], "manager_verified": True}
         if reopen:

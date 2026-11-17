@@ -44,7 +44,7 @@ WITH_EXIT_CHECK = {
     "mac_signed_server_restart.py": "7d3b2d04b2d3c09ab100f9e9c781b4720daabcbcec55009f083386abadcad7dc",
     "mac_manager_lifecycle_request.py": "76f00318f8c2636d4dc435f09b6226790ef1e9fdc06534d5f4207397b97fccde",
 }
-INCOMING = {
+WITH_NATIVE_WINDOW = {
     BRIDGE: "2f72f81a43b8a2ed80b6dc3d5f1c729cfbad043fae1c5a95f4250c68e0e4b629",
     ADAPTER: "10541d31caf62a4c2035b2292caa830c38e0b73c3b0c10c955ed1abf620f2aa9",
     STARTUP: "880abb06c441cd975e3b9f8b7f7daad4f289663d861e1385ac42eab4e6e7f121",
@@ -52,6 +52,7 @@ INCOMING = {
     LIFECYCLE: "d467878fb715b5bef6f30fa68627899554f050d31359f07ed72dd5e0d2726ef3",
     NATIVE: "13d4c58d846d30da372b46beea1c8653b0ba3d0a22a2e3891829a5f5604039a0",
 }
+INCOMING = WITH_NATIVE_WINDOW | {'mac_manager_lifecycle_request.py': '5fc6bb14483029176e2379788dd9d66110bbd40178f2d5578bedc08bc35e6065', 'mac_manager_native.py': 'e8b77d3d7b537ee103a6479810899fae65b68a565a62d48bbf33fffdd799b3c1'}
 
 
 def matches(path, expected):
@@ -84,7 +85,7 @@ def main():
         if compiled.returncode:
             raise ValueError("Le contrôle natif du Manager n’a pas pu être compilé.")
     if not all(matches(target / name, digest) for name, digest in INCOMING.items()):
-        baseline = next((version for version in (BASELINE, WITH_DASHBOARD_PROOF, WITH_LIFECYCLE, WITH_EXIT_CHECK)
+        baseline = next((version for version in (BASELINE, WITH_DASHBOARD_PROOF, WITH_LIFECYCLE, WITH_EXIT_CHECK, WITH_NATIVE_WINDOW)
                          if all(matches(target / name, digest) for name, digest in version.items())), None)
         if baseline is None:
             raise ValueError("La version installée du pont est inattendue.")
@@ -100,7 +101,7 @@ def main():
         result = subprocess.run(["/bin/launchctl", "print", f"gui/{os.getuid()}/{LABEL}"],
                                 capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=5)
         if result.returncode == 0 and re.search(r"^\s*state = running\s*$", result.stdout, re.MULTILINE):
-            print("Cycle du Manager et redémarrage distants de Rap Brain activés.")
+            print("Lancement natif du Manager et redémarrage distants activés.")
             return
         time.sleep(0.5)
     raise ValueError("La relance du pont n’a pas été confirmée.")

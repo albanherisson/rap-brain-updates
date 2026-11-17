@@ -45,11 +45,33 @@ class ManagerNativeTest(unittest.TestCase):
         self.assertEqual(self.call.call_count, 1)
 
     def test_missing_window_prevents_a_successful_reopen(self):
-        tick = iter([0.0, 0.0, 21.0])
-        probe = Mock(return_value={"state": "running", "was_running": True, "window_present": False})
+        self.result.stdout = b'{"state":"running","was_running":true,"window_present":false}'
         with self.assertRaisesRegex(ValueError, "window_unverified"):
-            native.open_native_window(self.home, opener=Mock(), inspect=probe,
-                                      clock=lambda: next(tick), sleep=lambda _: None)
+            native.native_request(self.home, "open", call=self.call)
+
+    def test_open_requires_a_verified_running_app_and_window(self):
+        self.result.stdout = b'{"state":"running","was_running":true,"window_present":true}'
+        result = native.native_request(self.home, "open", call=self.call)
+        self.assertTrue(result["window_present"])
+        command = self.call.call_args_list[-1]
+        self.assertEqual(json.loads(command.kwargs["input"]), {"app": str(self.app), "operation": "open"})
+
+    def test_native_launch_errors_remain_distinct_in_the_remote_receipt(self):
+        self.result.returncode = 2
+        self.result.stderr = b'remote_manager_native_launch_error_n10810'
+        with self.assertRaisesRegex(ValueError, "launch_error_n10810"):
+            native.native_request(self.home, "open", call=self.call)
+
+    def test_unreviewed_error_text_is_not_published(self):
+        self.result.returncode = 2
+        self.result.stderr = b'Failed to launch /Users/private/path with sensitive context'
+        with self.assertRaisesRegex(ValueError, "probe_failed"):
+            native.native_request(self.home, "open", call=self.call)
+
+    def test_open_uses_the_native_launch_operation(self):
+        probe = Mock(return_value={"state": "running", "was_running": True, "window_present": True})
+        self.assertTrue(native.open_native_window(self.home, inspect=probe)["window_present"])
+        probe.assert_called_once_with(self.home, "open")
 
     def test_close_reply_cannot_report_a_still_running_application(self):
         self.result.stdout = b'{"state":"running","was_running":true,"window_present":true}'
