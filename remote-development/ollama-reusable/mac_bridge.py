@@ -36,6 +36,7 @@ from mac_manager_inventory import inspect as inspect_manager, running as manager
 from mac_manager_install_request import advance_install_task, parse_install_task
 from mac_manager_start_request import advance_start_task, parse_start_task
 from mac_manager_lifecycle_request import ACTIONS as LIFECYCLE_ACTIONS, advance_lifecycle_task, parse_lifecycle_task
+from mac_manager_page_request import advance_page_task, parse_page_task
 from mac_manager_sign_request import SIGN_ACTIONS, parse_sign_task, private_file, run_sign_task
 from manager_remote_request import decode_remote_json
 from pathlib import Path
@@ -206,6 +207,8 @@ def read_task(task_id, get=request, now=None):
         parse_start_task(task, now=now)
     elif schema == "rapbrain-remote-task-v6" and type(action) is str and action in LIFECYCLE_ACTIONS:
         parse_lifecycle_task(task, now=now)
+    elif schema == "rapbrain-remote-task-v7" and action == "manager_open_page":
+        parse_page_task(task, now=now)
     elif schema == "rapbrain-remote-task-v4" and type(action) is str and action in SIGN_ACTIONS:
         parse_sign_task(task, now=now, allow_expired=True)
     elif schema == OLLAMA_TASK and action == "decoder_ollama_trial":
@@ -500,6 +503,14 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
             result["status"] = "refused"
             result[action] = {"state": "refused", "reason": reason if re.fullmatch(
                 r"[a-z0-9_]{1,80}", reason) else "remote_manager_lifecycle_refused"}
+    if action == "manager_open_page" and result["status"] == "pass":
+        try:
+            result[action] = advance_page_task(task)
+        except (OSError, ValueError, subprocess.SubprocessError, http.client.HTTPException) as error:
+            reason = str(error)
+            result["status"] = "refused"
+            result[action] = {"state": "refused", "reason": reason if re.fullmatch(
+                r"[a-z0-9_]{1,80}", reason) else "remote_manager_page_refused"}
     return result
 
 
