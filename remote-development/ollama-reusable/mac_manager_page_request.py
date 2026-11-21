@@ -15,6 +15,10 @@ FIELDS = {"schema", "id", "action", "expected_server_sha256", "expires_at",
           "authorization_commit"}
 
 
+class PageUnverified(ValueError):
+    """Opening may have occurred, but the visible URL could not be proven."""
+
+
 def parse_page_task(task, now=None):
     current = time.time() if now is None else now
     if (type(task) is not dict or task.keys() != FIELDS
@@ -47,23 +51,28 @@ def open_page(home, request, *, start=start_server, ready=server_ready,
         raise ValueError("remote_manager_page_server_unverified")
     if time.time() >= request["expires_at"]:
         raise ValueError("remote_manager_page_request_expired")
-    script = 'tell application "Safari" to open location "' + URL + '"'
-    opened = call(["/usr/bin/osascript", "-e", script], capture_output=True,
-                  text=True, stdin=subprocess.DEVNULL, timeout=20)
+    try:
+        opened = call(["/usr/bin/open", "-a", "Safari", URL], capture_output=True,
+                      text=True, stdin=subprocess.DEVNULL, timeout=20)
+    except subprocess.TimeoutExpired:
+        raise PageUnverified("remote_manager_page_open_timeout") from None
     if opened.returncode:
         raise ValueError("remote_manager_page_open_refused")
     deadline = clock() + 15
     while clock() < deadline:
-        observed = call(["/usr/bin/osascript", "-e",
-                         'tell application "Safari" to get URL of front document'],
-                        capture_output=True, text=True, stdin=subprocess.DEVNULL,
-                        timeout=5)
-        if observed.returncode == 0 and observed.stdout.strip() == URL:
+        try:
+            observed = call(["/usr/bin/osascript", "-e",
+                             'tell application "Safari" to get URL of front document'],
+                            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+                            timeout=5)
+        except subprocess.TimeoutExpired:
+            observed = None
+        if observed is not None and observed.returncode == 0 and observed.stdout.strip().rstrip("/") == URL.rstrip("/"):
             if ready(home / SERVER, subprocess.run, http):
                 return {"state": "opened", "server": server_state, "page_url_verified": True}
             raise ValueError("remote_manager_page_server_unverified")
         sleep(0.5)
-    raise ValueError("remote_manager_page_url_unverified")
+    raise PageUnverified("remote_manager_page_url_unverified")
 
 
 def advance_page_task(task, *, home=None, authorize=authorize_page, open_ui=open_page):
