@@ -99,6 +99,25 @@ class ManagerLifecycleTest(unittest.TestCase):
         self.stop.assert_called_once()
         self.start.assert_called_once()
 
+    def test_close_only_targets_signed_manager_without_restarting_server(self):
+        self.task["action"] = "manager_close"
+        result = self.advance()
+        self.assertEqual(result, {"state": "stopped", "manager_closed": True,
+                                  "manager_close_observed": True})
+        self.native.assert_called_once_with(self.home, "close")
+        self.stop.assert_not_called()
+        self.start.assert_not_called()
+        self.manager.assert_not_called()
+        self.show_window.assert_not_called()
+
+    def test_close_is_idempotent_when_manager_was_already_closed(self):
+        self.task["action"] = "manager_close"
+        self.native.return_value = {"state": "already_closed", "was_running": False,
+                                    "window_present": False}
+        self.assertEqual(self.advance(), {"state": "already_stopped", "manager_closed": True,
+                                          "manager_close_observed": False})
+        self.stop.assert_not_called()
+
     def test_reopen_does_not_stop_the_server_if_its_initial_window_is_unverified(self):
         self.task["action"] = "manager_reopen"
         self.show_window.side_effect = ValueError("remote_manager_native_window_unverified")
