@@ -38,6 +38,8 @@ from mac_manager_start_request import advance_start_task, parse_start_task
 from mac_manager_lifecycle_request import ACTIONS as LIFECYCLE_ACTIONS, advance_lifecycle_task, parse_lifecycle_task
 from mac_manager_page_request import PageUnverified, advance_page_task, parse_page_task
 from mac_decoder_status_request import advance_status_task, parse_status_task
+from mac_decoder_track_status_request import advance_track_task, parse_track_task
+from mac_decoder_queue_request import advance_queue_task, parse_queue_task
 from mac_manager_sign_request import SIGN_ACTIONS, parse_sign_task, private_file, run_sign_task
 from manager_remote_request import decode_remote_json
 from pathlib import Path
@@ -212,6 +214,10 @@ def read_task(task_id, get=request, now=None):
         parse_page_task(task, now=now)
     elif schema == "rapbrain-remote-task-v8" and action == "decoder_status":
         parse_status_task(task, now=now)
+    elif schema == "rapbrain-remote-task-v9" and action == "decoder_track_status":
+        parse_track_task(task, now=now)
+    elif schema == "rapbrain-remote-task-v10" and action == "decoder_queue":
+        parse_queue_task(task, now=now)
     elif schema == "rapbrain-remote-task-v4" and type(action) is str and action in SIGN_ACTIONS:
         parse_sign_task(task, now=now, allow_expired=True)
     elif schema == OLLAMA_TASK and action == "decoder_ollama_trial":
@@ -525,6 +531,24 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
             result["status"] = "refused"
             result[action] = {"reason": reason if re.fullmatch(
                 r"[a-z0-9_]{1,80}", reason) else "remote_decoder_status_refused"}
+    if action == "decoder_track_status" and result["status"] == "pass":
+        try:
+            result[action] = advance_track_task(task)
+        except (OSError, ValueError, subprocess.SubprocessError, http.client.HTTPException) as error:
+            reason = str(error)
+            result["status"] = "refused"
+            result[action] = {"reason": reason if re.fullmatch(
+                r"[a-z0-9_]{1,80}", reason) else "remote_decoder_track_refused"}
+    if action == "decoder_queue" and result["status"] == "pass":
+        try:
+            outcome = advance_queue_task(task)
+            result[action] = outcome
+            result["status"] = "pass" if outcome["state"] in ("queued", "already_active") else outcome["state"]
+        except (OSError, ValueError, subprocess.SubprocessError, http.client.HTTPException) as error:
+            reason = str(error)
+            result["status"] = "refused"
+            result[action] = {"state": "refused", "reason": reason if re.fullmatch(
+                r"[a-z0-9_]{1,80}", reason) else "remote_decoder_queue_refused"}
     return result
 
 
