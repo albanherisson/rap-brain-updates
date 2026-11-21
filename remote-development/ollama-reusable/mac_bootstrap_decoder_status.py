@@ -9,7 +9,7 @@ import tempfile
 import urllib.request
 
 
-COMMIT = "9c329e72bb615cd23cb1ce9c631d6c36e690cad1"
+COMMIT = "3fe9076405b29ca7d1230d6798101f7d6fc47f06"
 BASE = "https://raw.githubusercontent.com/albanherisson/rap-brain-updates/" + COMMIT + "/"
 FILES = {
     "mac_bridge.py": ("remote-development/ollama-reusable/mac_bridge.py",
