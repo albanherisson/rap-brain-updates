@@ -16,7 +16,7 @@ from manager_remote_request import (
 )
 
 
-ACTIONS = frozenset(("manager_stop", "manager_restart", "manager_reopen"))
+ACTIONS = frozenset(("manager_stop", "manager_restart", "manager_reopen", "manager_close"))
 SCHEMA = "rapbrain-manager-lifecycle-v1"
 BUSY_REASONS = frozenset(("worker_busy_or_maintenance", "jobs_active_or_unknown_status"))
 RECOVERY_SECONDS = 600
@@ -69,6 +69,16 @@ def advance_lifecycle_task(task, *, home=None, authorize=authorize_lifecycle, st
     with request_lock(directory) as acquired:
         if not acquired:
             return {"state": "pending"}
+        if request["action"] == "manager_close":
+            if now() >= request["expires_at"]:
+                return {"state": "expired"}
+            verify_server(home / SERVER, request["expected_server_sha256"])
+            closed = native(home, "close")
+            if closed["state"] not in ("closed", "already_closed"):
+                raise ValueError("remote_manager_native_close_not_observed")
+            return {"state": "stopped" if closed["state"] == "closed" else "already_stopped",
+                    "manager_closed": True,
+                    "manager_close_observed": closed["state"] == "closed" and closed["was_running"] is True}
         previous = read_remote_json(path)
         if previous is not None and (type(previous) is not dict or previous.get("request_sha256") != digest
                                      or previous.get("stop") not in ("stopped", "already_stopped")
