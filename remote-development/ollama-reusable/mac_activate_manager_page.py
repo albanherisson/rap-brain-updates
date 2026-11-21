@@ -18,11 +18,13 @@ BASELINE = {
     "mac_manager_lifecycle_request.py": "5fc6bb14483029176e2379788dd9d66110bbd40178f2d5578bedc08bc35e6065",
     "mac_manager_native.py": "f08eb84f93344df2f975f52f0ca9af682202d6647237d104ee181e235a4dd852",
 }
-INCOMING = {
+WITH_PAGE = BASELINE | {
     "mac_bridge.py": "c1d827115951d700ef99766f3ade0a90dbd0d493162170e26bc352f49b73acfa",
-}
-ADDITIONS = {
     "mac_manager_page_request.py": "785e20b950b172f324f3dd44a910c70ba1375923cf4dd3e5edcc6a5957a0accc",
+}
+INCOMING = {
+    "mac_bridge.py": "48d35d666bd540fb0da179a3d8300ce25b1f232d3cf8a5f28f5b670ba60344a1",
+    "mac_manager_page_request.py": "1740fa3c44febb2be2949efe20d1e1a33c1fbd3118ecf49bcc657725703eff23",
 }
 
 
@@ -37,7 +39,7 @@ def main():
     home = Path.home().resolve()
     source = Path(__file__).resolve().parent
     target = home / "Library/Application Support/RapBrainRemoteBridge"
-    if not all(matches(source / name, digest) for name, digest in (INCOMING | ADDITIONS).items()):
+    if not all(matches(source / name, digest) for name, digest in INCOMING.items()):
         raise ValueError("Les fichiers de la nouvelle action sont inattendus.")
     if not matches(source / "mac_install_agent.py", INSTALLER_SHA):
         raise ValueError("L’installateur du pont est inattendu.")
@@ -47,11 +49,17 @@ def main():
 
     if not callable(parse_page_task):
         raise ValueError("L’action de page est indisponible.")
-    if not all(matches(target / name, digest) for name, digest in (BASELINE | INCOMING | ADDITIONS).items()):
-        if not all(matches(target / name, digest) for name, digest in BASELINE.items()):
+    if not all(matches(target / name, digest) for name, digest in (BASELINE | INCOMING).items()):
+        if all(matches(target / name, digest) for name, digest in WITH_PAGE.items()):
+            upgrade_manager_bridge(home, source, subprocess.run, WITH_PAGE, INCOMING)
+        elif all(matches(target / name, digest) for name, digest in BASELINE.items()):
+            upgrade_manager_bridge(home, source, subprocess.run, BASELINE,
+                                   {"mac_bridge.py": INCOMING["mac_bridge.py"]},
+                                   additions={"mac_manager_page_request.py":
+                                              INCOMING["mac_manager_page_request.py"]})
+        else:
             raise ValueError("La version installée du pont est inattendue.")
-        upgrade_manager_bridge(home, source, subprocess.run, BASELINE, INCOMING, additions=ADDITIONS)
-    if not all(matches(target / name, digest) for name, digest in (BASELINE | INCOMING | ADDITIONS).items()):
+    if not all(matches(target / name, digest) for name, digest in (BASELINE | INCOMING).items()):
         raise ValueError("L’installation de la nouvelle action n’a pas été confirmée.")
     deadline = time.monotonic() + 12
     while time.monotonic() < deadline:
