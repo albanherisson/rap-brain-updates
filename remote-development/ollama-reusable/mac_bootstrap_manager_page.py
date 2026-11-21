@@ -9,15 +9,15 @@ import tempfile
 import urllib.request
 
 
-COMMIT = "a891530b56bd9b08b711e5c29d4bea22b424cd10"
+COMMIT = "ffc48a23335aad35de0db8ae2267328012ad6f7c"
 BASE = "https://raw.githubusercontent.com/albanherisson/rap-brain-updates/" + COMMIT + "/"
 FILES = {
     "mac_bridge.py": ("remote-development/ollama-reusable/mac_bridge.py",
-                      "c1d827115951d700ef99766f3ade0a90dbd0d493162170e26bc352f49b73acfa"),
+                      "48d35d666bd540fb0da179a3d8300ce25b1f232d3cf8a5f28f5b670ba60344a1"),
     "mac_manager_page_request.py": ("remote-development/ollama-reusable/mac_manager_page_request.py",
-                                    "785e20b950b172f324f3dd44a910c70ba1375923cf4dd3e5edcc6a5957a0accc"),
+                                    "1740fa3c44febb2be2949efe20d1e1a33c1fbd3118ecf49bcc657725703eff23"),
     "mac_activate_manager_page.py": ("remote-development/ollama-reusable/mac_activate_manager_page.py",
-                                     "c0d14590c9e4febe3a1c2470ba59814b15c7052bc1e06904de3c33fda8478fbc"),
+                                     "60337ee6401d60f5ac91a2a27d47b4fbeda8edc20b276311c706f78a3733afb4"),
     "mac_install_agent.py": ("remote-development/mac_install_agent.py",
                              "e4af248672cba48907401747383bf857112554591235165cf93616ff46d294e8"),
 }
