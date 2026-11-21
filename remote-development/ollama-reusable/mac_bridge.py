@@ -36,7 +36,7 @@ from mac_manager_inventory import inspect as inspect_manager, running as manager
 from mac_manager_install_request import advance_install_task, parse_install_task
 from mac_manager_start_request import advance_start_task, parse_start_task
 from mac_manager_lifecycle_request import ACTIONS as LIFECYCLE_ACTIONS, advance_lifecycle_task, parse_lifecycle_task
-from mac_manager_page_request import advance_page_task, parse_page_task
+from mac_manager_page_request import PageUnverified, advance_page_task, parse_page_task
 from mac_manager_sign_request import SIGN_ACTIONS, parse_sign_task, private_file, run_sign_task
 from manager_remote_request import decode_remote_json
 from pathlib import Path
@@ -506,6 +506,9 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
     if action == "manager_open_page" and result["status"] == "pass":
         try:
             result[action] = advance_page_task(task)
+        except PageUnverified as error:
+            result["status"] = "unverified"
+            result[action] = {"state": "unverified", "reason": str(error)}
         except (OSError, ValueError, subprocess.SubprocessError, http.client.HTTPException) as error:
             reason = str(error)
             result["status"] = "refused"
