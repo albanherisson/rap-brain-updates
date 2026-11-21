@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from mac_manager_page_request import URL, advance_page_task, open_page, parse_page_task
+from mac_manager_page_request import PageUnverified, URL, advance_page_task, open_page, parse_page_task
 
 
 class ManagerPageTests(unittest.TestCase):
@@ -44,8 +44,7 @@ class ManagerPageTests(unittest.TestCase):
         self.assertEqual(outcome, {"state": "opened", "server": "already_running",
                                    "page_url_verified": True})
         self.assertEqual(call.call_args_list[0].args[0],
-                         ["/usr/bin/osascript", "-e",
-                          'tell application "Safari" to open location "' + URL + '"'])
+                         ["/usr/bin/open", "-a", "Safari", URL])
         self.assertEqual(call.call_args_list[1].args[0][-1],
                          'tell application "Safari" to get URL of front document')
 
@@ -59,6 +58,18 @@ class ManagerPageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "server_unverified"):
             open_page(Path("/tmp/rapbrain-test"), request, start=Mock(return_value="started"),
                       ready=Mock(return_value=False), call=Mock())
+
+    def test_unverified_url_is_distinct_from_an_open_refusal(self):
+        call = Mock(side_effect=[
+            SimpleNamespace(returncode=0, stdout=""),
+            subprocess.TimeoutExpired(cmd=["/usr/bin/osascript"], timeout=5),
+        ])
+        with self.assertRaisesRegex(PageUnverified, "url_unverified"):
+            open_page(Path("/tmp/rapbrain-test"), parse_page_task(self.task),
+                      start=Mock(return_value="already_running"), ready=Mock(return_value=True),
+                      call=call, clock=Mock(side_effect=[0, 16]), sleep=Mock())
+        self.assertEqual(call.call_args_list[0].args[0],
+                         ["/usr/bin/open", "-a", "Safari", URL])
 
 
 if __name__ == "__main__":
