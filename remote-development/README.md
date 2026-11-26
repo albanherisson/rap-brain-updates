@@ -6,6 +6,18 @@ Alban pilote les priorités et valide les changements ; ChatGPT conçoit et écr
 
 La P0 passe avant la suite du Decoding Engine. Le rangement des Téléchargements vient après la P0 et la reprise du Decoding Engine ; il ne conditionne pas le premier jalon distant.
 
+## État vérifié au 26 novembre 2026
+
+| Domaine | État | Preuve et limite |
+| --- | --- | --- |
+| Pont Mac–GitHub | Validé pour les actions autorisées | Démarrage distant du Manager, état global/par morceau et mise en file réelle d’un seul titre ; autorisations privées et résultats publics expurgés. |
+| Mises à jour signées | Validées sur l’installation réelle | [v31](results/p0-decoder-31-install-after-restart.json), [v32](results/p0-decoder-32-live-install.json) et [v33](results/p0-decoder-33-live-install.json) installées à distance avec réouverture du Manager. Ne pas remettre cette capacité au rang « à développer ». |
+| Échec et retour arrière | Validés sur copies ; refus réels observés | Le [pilote 010](results/pilot-010.json) a repris trois interruptions avec base fictive préservée ; l’[essai signé v33](results/p0-decoder-33-recover-saved-report-mac.json) a confirmé installation et retour arrière sur copie avec SQLite/configuration de test préservés. Les installations réelles ont refusé des prérequis incompatibles. Aucun retour arrière provoqué sur les données de production n’est revendiqué. |
+| Decoder par morceau | Lecture et lancement réels validés | [Une tâche mise en file](results/p0-41-burning-bridges-queue-20261126.json), puis [état running à 1 %](results/p0-43-burning-bridges-progress-20261126.json). Le Mac a été fermé ensuite : fin du décodage et rapport final non vérifiés. |
+| Suivi amélioré | Candidat hors ligne | [PR #16](https://github.com/albanherisson/rap-brain-updates/pull/16) : décompte des rapports complets et statut des tâches anciennes ; non installée. Les rapports HTML interactifs restent le format de consultation. |
+
+**Suite de la P0 :** au prochain réveil du Mac, vérifier reprise et rapport final du titre en cours ; contrôler l’intégrité complète des données après mise à jour ; éprouver les scénarios de panne encore ouverts ; intégrer le suivi par morceau et l’accès aux rapports HTML dans une interface simple. Les validations sur copies et les succès d’installation réelle doivent rester distingués.
+
 ## Étapes vérifiables
 
 1. **Inventaire local** : exécuter `mac_preflight.py` sur le Mac et relever la version du serveur, la présence du Manager, de Git et d'Ollama. Lecture seule, sans parcourir la base ou les paroles.
