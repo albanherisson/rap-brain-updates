@@ -73,13 +73,19 @@ def read_track(home, authorization, *, call=subprocess.run, http=local_request):
     progress = latest.get("progress")
     if type(progress) is not int or not 0 <= progress <= 100:
         progress = None
-    state = latest.get("status") if latest.get("status") in ("pending", "running", "done", "failed") else "other"
+    state = ("not_recent" if not related_jobs else
+             latest.get("status") if latest.get("status") in
+             ("pending", "running", "done", "error", "failed", "interrupted", "cancelled") else "other")
+    ready_reports = sum(1 for report in related_reports
+                        if not report.get("fragment") and not report.get("blocked")
+                        and report.get("status") in (None, "done"))
     if not server_ready(script, call, http):
         raise ValueError("remote_decoder_track_server_changed")
     # No track ID, artist, title, lyrics, report body or job error leaves the Mac.
     return {"schema": "rapbrain-decoder-track-status-result-v1", "found": True,
             "has_lyrics": type(track.get("length")) is int and track["length"] > 0,
-            "reports": len(related_reports), "latest_job_state": state,
+            "reports": len(related_reports), "ready_reports": ready_reports,
+            "latest_job_state": state,
             "latest_progress": progress, "server_verified": True}
 
 
