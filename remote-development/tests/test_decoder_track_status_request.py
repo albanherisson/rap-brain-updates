@@ -28,13 +28,15 @@ class TrackStatusTest(unittest.TestCase):
         responses = {
             "/api/tracks?q=Private%20Song": [{"id": 7, "artist": "GNS", "title": "Private Song", "length": 1200}],
             "/api/jobs": [{"track_id": 7, "status": "running", "progress": 42, "error": "private error"}],
-            "/api/decoder-reports": {"reports": [{"track_id": 7, "title": "Private Song"}]},
+            "/api/decoder-reports": {"reports": [{"track_id": 7, "title": "Private Song",
+                                                   "status": "done", "fragment": False, "blocked": ""}]},
         }
         http = Mock(side_effect=lambda port, method, path, **kw: json.dumps(responses[path]).encode())
         with patch.object(track_status, "server_ready", return_value=True):
             out = track_status.read_track(self.home, self.authorization, http=http)
         self.assertEqual(out["latest_progress"], 42)
         self.assertEqual(out["reports"], 1)
+        self.assertEqual(out["ready_reports"], 1)
         self.assertTrue(out["has_lyrics"])
         self.assertNotIn("Private Song", json.dumps(out))
         self.assertNotIn("7", json.dumps(out))
@@ -57,6 +59,23 @@ class TrackStatusTest(unittest.TestCase):
         with patch.object(track_status, "server_ready", return_value=True):
             out = track_status.read_track(self.home, self.authorization, http=http)
         self.assertEqual(out, {"schema": "rapbrain-decoder-track-status-result-v1", "found": False})
+
+    def test_old_and_partial_reports_are_distinguished_without_exposing_contents(self):
+        responses = {
+            "/api/tracks?q=Private%20Song": [{"id": 7, "artist": "GNS", "title": "Private Song", "length": 10}],
+            "/api/jobs": [],
+            "/api/decoder-reports": {"reports": [
+                {"track_id": 7, "status": None, "fragment": False, "blocked": "", "body": "private"},
+                {"track_id": 7, "status": "done", "fragment": True, "blocked": ""},
+                {"track_id": 7, "status": "running", "fragment": False, "blocked": "active"},
+            ]},
+        }
+        http = Mock(side_effect=lambda port, method, path, **kw: json.dumps(responses[path]).encode())
+        with patch.object(track_status, "server_ready", return_value=True):
+            out = track_status.read_track(self.home, self.authorization, http=http)
+        self.assertEqual((out["reports"], out["ready_reports"], out["latest_job_state"]),
+                         (3, 1, "not_recent"))
+        self.assertNotIn("private", json.dumps(out))
 
 
 if __name__ == "__main__":
