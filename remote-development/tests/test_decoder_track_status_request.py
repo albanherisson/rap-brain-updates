@@ -77,6 +77,18 @@ class TrackStatusTest(unittest.TestCase):
                          (3, 1, "not_recent"))
         self.assertNotIn("private", json.dumps(out))
 
+    def test_cancelled_job_keeps_saved_progress(self):
+        responses = {
+            "/api/tracks?q=Private%20Song": [{"id": 7, "artist": "GNS", "title": "Private Song", "length": 10}],
+            "/api/jobs": [{"track_id": 7, "status": "cancelled", "progress": 54, "error": "private"}],
+            "/api/decoder-reports": {"reports": []},
+        }
+        http = Mock(side_effect=lambda port, method, path, **kw: json.dumps(responses[path]).encode())
+        with patch.object(track_status, "server_ready", return_value=True):
+            out = track_status.read_track(self.home, self.authorization, http=http)
+        self.assertEqual((out["latest_job_state"], out["latest_progress"]), ("cancelled", 54))
+        self.assertNotIn("private", json.dumps(out))
+
 
 if __name__ == "__main__":
     unittest.main()
