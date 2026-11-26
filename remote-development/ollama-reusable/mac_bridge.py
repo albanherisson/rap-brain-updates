@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 9427)
+Total output lines: 695
+
 #!/usr/bin/env python3
 """Run one allowlisted public task; optionally publish a redacted result.
 
@@ -40,6 +43,7 @@ from mac_manager_page_request import PageUnverified, advance_page_task, parse_pa
 from mac_decoder_status_request import advance_status_task, parse_status_task
 from mac_decoder_track_status_request import advance_track_task, parse_track_task
 from mac_decoder_queue_request import advance_queue_task, parse_queue_task
+from mac_decoder_job_action_request import ACTIONS as DECODER_JOB_ACTIONS, advance_action_task, parse_action_task
 from mac_manager_sign_request import SIGN_ACTIONS, parse_sign_task, private_file, run_sign_task
 from manager_remote_request import decode_remote_json
 from pathlib import Path
@@ -218,6 +222,8 @@ def read_task(task_id, get=request, now=None):
         parse_track_task(task, now=now)
     elif schema == "rapbrain-remote-task-v10" and action == "decoder_queue":
         parse_queue_task(task, now=now)
+    elif schema == "rapbrain-remote-task-v11" and action in DECODER_JOB_ACTIONS:
+        parse_action_task(task, now=now)
     elif schema == "rapbrain-remote-task-v4" and type(action) is str and action in SIGN_ACTIONS:
         parse_sign_task(task, now=now, allow_expired=True)
     elif schema == OLLAMA_TASK and action == "decoder_ollama_trial":
@@ -330,38 +336,7 @@ def run_decoder_ollama_trial(token, home=None, source_probe=trial_commit, call=s
                     with os.fdopen(os.open(data / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as stream:
                         stream.write(raw)
             except (OSError, ValueError):
-                return {"status": "failed", "reason": "test_inputs_unavailable"}
-        env = {"HOME": str(test_home), "TMPDIR": str(workspace), "PATH": os.defpath,
-               "LC_ALL": "C", "PYTHONUTF8": "1"}
-        log = workspace / "ollama-trial-output"
-        try:
-            with log.open("xb") as output:
-                result = call([sys.executable, "-I", "-B", str(runner), str(test_home), "--decoder-only"],
-                              cwd=workspace, env=env, timeout=OLLAMA_TIMEOUT, stdin=subprocess.DEVNULL,
-                              stdout=output, stderr=subprocess.STDOUT, preexec_fn=_ollama_trial_limits)
-        except subprocess.TimeoutExpired:
-            return {"status": "failed", "reason": "runner_timeout"}
-        except OSError:
-            return {"status": "failed", "reason": "runner_execution_failed"}
-        if log.stat().st_size > 262_144:
-            return {"status": "failed", "reason": "runner_proof_too_large"}
-        reports = {}
-        for line in log.read_bytes().splitlines():
-            try:
-                report = json.loads(line)
-            except (ValueError, UnicodeError, RecursionError):
-                continue
-            if isinstance(report, dict) and len(report) == 1:
-                reports.update(report)
-        trial = reports.get("trial", {})
-        if not isinstance(trial, dict):
-            trial = {}
-        proof = {key: trial.get(key) is True for key in
-                 ("passed", "source", "memory", "decoder_transfer", "sqlite_ok")}
-        proof["installed_files_unchanged"] = reports.get("installed_files_unchanged") is True
-        if task is not None:
-            try:
-                proof["installed_files_unchanged"] = (proof["installed_files_unchanged"]
+               …427 tokens truncated…oof["installed_files_unchanged"]
                     and _ollama_trial_inputs(home) == inputs
                     and inspect(home)["server_sha256"] == task["expected_server_sha256"])
             except (OSError, ValueError):
@@ -549,6 +524,17 @@ def run(task, task_sha, probe=inspect, private_probe=private_trial, private_toke
             result["status"] = "refused"
             result[action] = {"state": "refused", "reason": reason if re.fullmatch(
                 r"[a-z0-9_]{1,80}", reason) else "remote_decoder_queue_refused"}
+    if action in DECODER_JOB_ACTIONS and result["status"] == "pass":
+        try:
+            outcome = advance_action_task(task)
+            result[action] = outcome
+            result["status"] = "pass" if outcome["state"] in (
+                "cancel_requested", "retry_requested") else outcome["state"]
+        except (OSError, ValueError, subprocess.SubprocessError, http.client.HTTPException) as error:
+            reason = str(error)
+            result["status"] = "refused"
+            result[action] = {"state": "refused", "reason": reason if re.fullmatch(
+                r"[a-z0-9_]{1,80}", reason) else "remote_decoder_job_refused"}
     return result
 
 
