@@ -74,7 +74,8 @@ def read_track(home, authorization, *, call=subprocess.run, http=local_request):
     if type(progress) is not int or not 0 <= progress <= 100:
         progress = None
     state = ("not_recent" if not related_jobs else
-             latest.get("status") if latest.get("status") in ("pending", "running", "done", "failed") else "other")
+             latest.get("status") if latest.get("status") in
+             ("pending", "running", "done", "error", "failed", "interrupted", "cancelled") else "other")
     ready_reports = sum(1 for report in related_reports
                         if not report.get("fragment") and not report.get("blocked")
                         and report.get("status") in (None, "done"))
