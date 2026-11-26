@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 9427)
-Total output lines: 695
-
 #!/usr/bin/env python3
 """Run one allowlisted public task; optionally publish a redacted result.
 
@@ -336,7 +333,38 @@ def run_decoder_ollama_trial(token, home=None, source_probe=trial_commit, call=s
                     with os.fdopen(os.open(data / name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as stream:
                         stream.write(raw)
             except (OSError, ValueError):
-               …427 tokens truncated…oof["installed_files_unchanged"]
+                return {"status": "failed", "reason": "test_inputs_unavailable"}
+        env = {"HOME": str(test_home), "TMPDIR": str(workspace), "PATH": os.defpath,
+               "LC_ALL": "C", "PYTHONUTF8": "1"}
+        log = workspace / "ollama-trial-output"
+        try:
+            with log.open("xb") as output:
+                result = call([sys.executable, "-I", "-B", str(runner), str(test_home), "--decoder-only"],
+                              cwd=workspace, env=env, timeout=OLLAMA_TIMEOUT, stdin=subprocess.DEVNULL,
+                              stdout=output, stderr=subprocess.STDOUT, preexec_fn=_ollama_trial_limits)
+        except subprocess.TimeoutExpired:
+            return {"status": "failed", "reason": "runner_timeout"}
+        except OSError:
+            return {"status": "failed", "reason": "runner_execution_failed"}
+        if log.stat().st_size > 262_144:
+            return {"status": "failed", "reason": "runner_proof_too_large"}
+        reports = {}
+        for line in log.read_bytes().splitlines():
+            try:
+                report = json.loads(line)
+            except (ValueError, UnicodeError, RecursionError):
+                continue
+            if isinstance(report, dict) and len(report) == 1:
+                reports.update(report)
+        trial = reports.get("trial", {})
+        if not isinstance(trial, dict):
+            trial = {}
+        proof = {key: trial.get(key) is True for key in
+                 ("passed", "source", "memory", "decoder_transfer", "sqlite_ok")}
+        proof["installed_files_unchanged"] = reports.get("installed_files_unchanged") is True
+        if task is not None:
+            try:
+                proof["installed_files_unchanged"] = (proof["installed_files_unchanged"]
                     and _ollama_trial_inputs(home) == inputs
                     and inspect(home)["server_sha256"] == task["expected_server_sha256"])
             except (OSError, ValueError):
