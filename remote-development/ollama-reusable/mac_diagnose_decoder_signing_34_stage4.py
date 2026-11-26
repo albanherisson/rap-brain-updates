@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Diagnose the signed copy rehearsal without publishing or installing."""
+
+import hashlib
+import json
+from pathlib import Path
+import re
+import sys
+import tempfile
+import traceback
+import urllib.request
+
+TASK_URL = ("https://raw.githubusercontent.com/albanherisson/rap-brain-updates/"
+            "e082f7abefacd68fa56c1003bce3e60d82da7427/"
+            "remote-development/tasks/p0-decoder-34-resume-checkpoint.json")
+TASK_SHA256 = "51b7cd43373cb922d72f930e26b30f3a4b2630e2c6a9d9cb97089982e85b5138"
+STAGE = "platform"
+
+
+def report(state, detail):
+    print(json.dumps({"stage": STAGE, "state": state, "detail": detail}, sort_keys=True))
+
+
+def main():
+    global STAGE
+    if sys.platform != "darwin":
+        raise RuntimeError("mac_only")
+    home = Path.home().resolve()
+    bridge = home / "Library/Application Support/RapBrainRemoteBridge"
+    STAGE = "public_task"
+    with urllib.request.urlopen(TASK_URL, timeout=20) as response:
+        raw = response.read(4097)
+        if response.geturl() != TASK_URL or len(raw) > 4096:
+            raise RuntimeError("task_changed")
+    if hashlib.sha256(raw).hexdigest() != TASK_SHA256:
+        raise RuntimeError("task_hash_changed")
+    task = json.loads(raw)
+    STAGE = "signer_import"
+    sys.path.insert(0, str(bridge))
+    import mac_manager_sign_request as signer
+    grant = signer.parse_sign_task(task, allow_expired=True)
+    archive = signer.authorize(task, grant)
+    with tempfile.TemporaryDirectory(prefix="rapbrain-sign-preflight-") as directory:
+        root = Path(directory).resolve()
+        STAGE = "verified_helper"
+        modules, _ = signer.verified_helpers(home, root)
+        sys.path.insert(0, str(modules))
+        from manager_update_release import verify_archive, verify_baseline, verify_manifest
+        STAGE = "stable_manifest"
+        stable = verify_manifest(signer.get_pinned(signer.CHANNEL, grant["stable_manifest_sha256"]))
+        accepted = signer.read_remote_json(home / signer.STATE / "manager-accepted.json")
+        if stable["sequence"] != 33 or accepted != {"sequence": 33}:
+            raise RuntimeError("installed_sequence_changed")
+        STAGE = "manager_launcher_and_dashboard"
+        resources = home / signer.APP / "Contents/Resources"
+        launcher = signer.checked(resources / "launch_manager.py", 250_000)
+        dashboard = signer.checked(resources / "dashboard_beta14.html", 250_000)
+        if (signer.sha(launcher) != signer.LAUNCHER
+                or signer.sha(dashboard) != grant["baseline_dashboard_sha256"]):
+            raise RuntimeError("manager_baseline_changed")
+        STAGE = "release_baseline"
+        manifest = {
+            "schema": "rapbrain-manager-production-v1",
+            "sequence": grant["sequence"],
+            "issued_at": grant["issued_at"],
+            "expires_at": grant["issued_at"] + 14 * 86400,
+            "production_install_authorized": True,
+            "data_migrations": [],
+            "validation": signer.VALIDATION,
+            "files": [{"path": "server.py",
+                       "baseline_sha256": grant["expected_server_sha256"],
+                       "payload_sha256": grant["candidate_server_sha256"]}],
+            "required_server_sha256": grant["expected_server_sha256"],
+            "archive_url": signer.REPO + "main/manager-stable/update-34.zip",
+            "archive_sha256": grant["archive_sha256"],
+            "archive_bytes": len(archive),
+        }
+        verify_baseline(manifest, home / signer.SOURCE, resources)
+        STAGE = "release_archive"
+        payload = verify_archive(archive, manifest)["server.py"]
+        if hashlib.sha256(payload).hexdigest() != grant["candidate_server_sha256"]:
+            raise RuntimeError("candidate_changed")
+    STAGE = "signed_copy_rehearsal"
+    with tempfile.TemporaryDirectory(prefix="rapbrain-sign-rehearsal-") as directory:
+        outcome = signer.sign_candidate(home, Path(directory).resolve(), grant, archive,
+                                        task["authorization_commit"])
+    report("pass", "signed_manifest_created_unpublished:" + str(outcome.get("manifest_sha256", "unknown")))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        reason = str(error).replace("\n", " ")[:120]
+        if not re.fullmatch(r"[A-Za-z0-9_ .:/-]{1,120}", reason):
+            reason = type(error).__name__
+        frames = [frame.name for frame in traceback.extract_tb(error.__traceback__)[-6:]]
+        print(json.dumps({"stage": STAGE, "state": "refused", "detail": reason,
+                          "error_type": type(error).__name__, "functions": frames}, sort_keys=True))
