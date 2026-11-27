@@ -1,0 +1,7 @@
+{
+  "schema": "rapbrain-remote-task-v1",
+  "id": "pilot-014",
+  "action": "manager_remote_update_trial",
+  "expected_server_sha256": "4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e16c",
+  "expires_at": 1794696137
+}

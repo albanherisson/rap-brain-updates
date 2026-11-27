@@ -1,0 +1,1 @@
+{"action":"manager_install","authorization_commit":"e272fc8246730b488f1ef082e399dd128e702988","expected_server_sha256":"1238354b0aaf5ed3ac92c4c4ddddf33b80a22212a9dc6ac8d450f217eaff2e32","expires_at":1794561193,"id":"p0-decoder-install-22-retry","manifest_sha256":"9aa758cc71879a2990cb6111ff7c988b7bb3f6beae6e080507e32ddbe175ae05","schema":"rapbrain-remote-task-v3","sequence":22}

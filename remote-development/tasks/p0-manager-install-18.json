@@ -1,0 +1,1 @@
+{"schema":"rapbrain-remote-task-v3","id":"p0-manager-install-18","sequence":18,"manifest_sha256":"d855c45f6b6fc07983b4de675b33e83eb6666d34a2b751f89add7cf495023e21","expected_server_sha256":"4cdab9087a33855e79e8fee5d639cae3489fc7a4399cdc6e0099b15ad8a7e16c","expires_at":1794520891,"action":"manager_install","authorization_commit":"a621aa09d16af7b29fb2a1e67e549d7f45f32138"}
